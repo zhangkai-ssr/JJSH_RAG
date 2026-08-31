@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
+import hashlib
 from pathlib import PurePosixPath
 from typing import Mapping
 
@@ -63,6 +64,86 @@ class DocumentMeta:
             raise ValueError("正式索引缺少版本、来源或分类字段")
         if self.status not in VALID_STATUSES:
             raise ValueError(f"未知文档状态: {self.status}")
+
+    @property
+    def document_id(self) -> str:
+        """返回由版本和仓库路径确定的稳定文档标识。"""
+        identity = f"{self.hardware_version}:{self.relative_path}"
+        return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class Chunk:
+    """保留原始行号和文档身份的最小知识块。"""
+
+    chunk_id: str
+    document_id: str
+    heading_or_symbol: str
+    start_line: int
+    end_line: int
+    content: str
+
+    @classmethod
+    def create(
+        cls,
+        document: DocumentMeta,
+        heading_or_symbol: str,
+        start_line: int,
+        end_line: int,
+        content: str,
+    ) -> "Chunk":
+        """建立内容确定、可重复生成的知识块。
+
+        Args:
+            document: 知识块所属文档。
+            heading_or_symbol: Markdown 标题、源码符号或字段路径。
+            start_line: 一基起始行号。
+            end_line: 一基结束行号。
+            content: 未丢失原始换行的文本内容。
+
+        Returns:
+            具有稳定 SHA-256 标识的知识块。
+        """
+        if start_line < 1 or end_line < start_line or not content.strip():
+            raise ValueError("知识块行号或内容无效")
+        identity = "\0".join(
+            (
+                document.document_id,
+                heading_or_symbol,
+                str(start_line),
+                str(end_line),
+                content,
+            )
+        )
+        return cls(
+            chunk_id=hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+            document_id=document.document_id,
+            heading_or_symbol=heading_or_symbol,
+            start_line=start_line,
+            end_line=end_line,
+            content=content,
+        )
+
+
+@dataclass(frozen=True)
+class RetrievedChunk:
+    """包含完整来源字段的检索结果。"""
+
+    chunk_id: str
+    document_id: str
+    hardware_version: str
+    relative_path: str
+    git_commit: str
+    source_sha256: str
+    document_type: str
+    module: str
+    status: str
+    evidence_level: EvidenceLevel
+    heading_or_symbol: str
+    start_line: int
+    end_line: int
+    content: str
+    score: float
 
 
 def infer_document_fields(
