@@ -1,0 +1,18 @@
+{
+  "product": "JSSH",
+  "hardware_version": "1.6_R6",
+  "source_repository": "C:\\work1\\JSZN\\ESP32_S3",
+  "source_prefix": "1.6_R6",
+  "include_extensions": [".md", ".c", ".h", ".py", ".ps1", ".json", ".txt"],
+  "exclude_segments": [
+    ".WORKTREE",
+    "ARCHIVE",
+    "tmp",
+    "output",
+    ".BUILD",
+    "release/out",
+    "validation/results",
+    ".pytest_cache"
+  ],
+  "tracked_files_only": true
+}
