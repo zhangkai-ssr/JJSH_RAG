@@ -37,8 +37,8 @@
 
 | 日期 | 方式 | 工作区 / 分支 | 工作范围 | 验证摘要 | 提交 / PR | 状态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-08-31 | worktree / PR | `feature/v1.6-r6-rag-mvp` / `.WORKTREE/v1.6-r6-rag-mvp/` | 建立 V1.6 R6 文本 RAG MVP：来源策略、元数据、解析、SQLite FTS5、混合检索、证据约束回答、CLI 和 40 条黄金评估。 | 源提交 `f89e2f847998ee3992c432ccfd2b6df8aa4eca63`；实际索引 334 文档、4047 chunks、0 errors；40 项测试通过；40 条评估的版本污染为 0，引用覆盖、引用位置、证据判断、拒答、Top 5 来源和边界判断均为 100%；未访问或修改真实设备。 | `76166c0` / PR #1 | 待合并 |
-| 2026-08-31 | worktree / PR 增量 | `feature/v1.6-r6-rag-mvp` / `.WORKTREE/v1.6-r6-rag-mvp/` | 将 ESP32_S3 的入口文档职责适配为本仓库根级 `AGENTS.md`、`plan.md` 和 `README.md`，明确只读源边界、证据治理、验证矩阵、工作树和 PR 流程。 | Markdown 相对链接、稳定命令、完整测试、黄金评估和 `git diff --check` 作为本次门禁；固件专用构建、烧录、硬件引脚和 external 镜像条款未复制。 | PR #1 增量 | 待合并 |
+| 2026-08-31 | worktree / PR | `feature/v1.6-r6-rag-mvp` / `.WORKTREE/v1.6-r6-rag-mvp/` | 建立 V1.6 R6 文本 RAG MVP：来源策略、元数据、解析、SQLite FTS5、混合检索、证据约束回答、CLI 和 40 条黄金评估。 | 源提交 `f89e2f847998ee3992c432ccfd2b6df8aa4eca63`；实际索引 334 文档、4047 chunks、0 errors；合并后在 `main@ebc256f` 复验 40 项测试通过；40 条评估的版本污染为 0，引用覆盖、引用位置、证据判断、拒答、Top 5 来源和边界判断均为 100%；未访问或修改真实设备。 | `76166c0` → `ebc256f` / PR #1 | 已完成 |
+| 2026-08-31 | worktree / PR 增量 | `feature/v1.6-r6-rag-mvp` / `.WORKTREE/v1.6-r6-rag-mvp/` | 将 ESP32_S3 的入口文档职责适配为本仓库根级 `AGENTS.md`、`plan.md` 和 `README.md`，明确只读源边界、证据治理、验证矩阵、工作树和 PR 流程。 | Markdown 相对链接、稳定命令、完整测试、黄金评估和 `git diff --check` 均通过；固件专用构建、烧录、硬件引脚和 external 镜像条款未复制；合并后已删除该临时 worktree 及本地、远程 feature 分支。 | `873ccc9` → `ebc256f` / PR #1 | 已完成 |
 
 ## 后续准入顺序
 
