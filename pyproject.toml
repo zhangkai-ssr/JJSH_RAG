@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jssh-rag"
+version = "0.1.0"
+description = "JSSH V1.6 R6 evidence-aware local RAG"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+jssh-rag = "jssh_rag.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
