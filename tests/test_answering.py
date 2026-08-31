@@ -72,6 +72,30 @@ class AnswererTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             Answerer().answer("状态？", "1.6_R6", [foreign])
 
+    def test_design_proposal_is_not_listed_as_validated(self):
+        answer = Answerer().answer(
+            "方案状态？",
+            "1.6_R6",
+            [result("建议调整 RLD 阻容，预期改善噪声。", EvidenceLevel.DESIGN_PROPOSED)],
+        )
+        self.assertEqual([], answer.validated)
+        self.assertTrue(any("预期改善" in item for item in answer.unvalidated))
+
+    def test_current_and_superseded_sources_are_reported_as_conflict(self):
+        current = result("GPIO48 是当前映射。", EvidenceLevel.SOURCE_REVIEWED)
+        superseded = RetrievedChunk(
+            **{
+                **result("GPIO35 是旧映射。", EvidenceLevel.SOURCE_REVIEWED, 20, 21).__dict__,
+                "chunk_id": "e" * 64,
+                "relative_path": "1.6_R6/docs/old.md",
+                "status": "superseded",
+            }
+        )
+        answer = Answerer().answer("DRDY_B 接哪里？", "1.6_R6", [current, superseded])
+        self.assertIn("冲突", answer.conclusion)
+        self.assertTrue(any("superseded" in item for item in answer.unvalidated))
+        self.assertEqual(2, len(answer.citations))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -108,8 +108,9 @@ class Answerer:
                 unvalidated=["没有目标版本证据，不能用其他版本代替。"],
                 next_step="补充或修正目标版本的 Git 跟踪资料后重新索引。",
             )
+        active = [item for item in retrieved if item.status == "current"] or retrieved
         highest = max(
-            (item.evidence_level for item in retrieved),
+            (item.evidence_level for item in active),
             key=EVIDENCE_ORDER.index,
         )
         citations = [
@@ -123,19 +124,40 @@ class Answerer:
             )
             for item in retrieved
         ]
-        sentences = [sentence for item in retrieved for sentence in _sentences(item.content)]
-        validated = sentences[: min(5, len(sentences))]
-        unvalidated = [
-            sentence for sentence in sentences if any(marker in sentence for marker in PENDING_MARKERS)
-        ]
-        has_real_device_evidence = any(item.evidence_level in REAL_DEVICE_LEVELS for item in retrieved)
+        all_sentences: list[str] = []
+        validated: list[str] = []
+        unvalidated: list[str] = []
+        for item in retrieved:
+            item_sentences = _sentences(item.content)
+            all_sentences.extend(item_sentences)
+            if item.evidence_level == EvidenceLevel.DESIGN_PROPOSED or item.status != "current":
+                unvalidated.extend(item_sentences)
+            else:
+                validated.extend(item_sentences)
+            unvalidated.extend(
+                sentence
+                for sentence in item_sentences
+                if any(marker in sentence for marker in PENDING_MARKERS)
+            )
+        validated = validated[:5]
+        has_real_device_evidence = any(
+            item.status == "current" and item.evidence_level in REAL_DEVICE_LEVELS
+            for item in retrieved
+        )
+        conflicting_status = any(item.status != "current" for item in retrieved) and any(
+            item.status == "current" for item in retrieved
+        )
+        if conflicting_status:
+            unvalidated.append("检索结果同时包含 current 与 superseded/draft/archive 状态来源，必须并列核对。")
         if not has_real_device_evidence:
             unvalidated.append(f"未找到 {hardware_version} 真机验收证据。")
         evidence_text = "\n\n".join(
             f"[{index}] {item.relative_path}:{item.start_line}-{item.end_line}\n{item.content}"
             for index, item in enumerate(retrieved, 1)
         )
-        if "真机" in query and not has_real_device_evidence:
+        if conflicting_status:
+            conclusion = "资料状态存在冲突：同时检索到 current 与非 current 来源，不能直接选择单一结论。"
+        elif "真机" in query and not has_real_device_evidence:
             conclusion = (
                 f"不确定：现有 {hardware_version} 证据最高为 {highest.value}，"
                 "不能据此认定真机验收通过。"
@@ -148,7 +170,8 @@ class Answerer:
             )
             conclusion = self.llm_provider.complete(prompt)
         else:
-            conclusion = f"基于 {hardware_version} 的 {highest.value} 证据：{validated[0]}"
+            summary = validated[0] if validated else all_sentences[0]
+            conclusion = f"基于 {hardware_version} 的 {highest.value} 证据：{summary}"
         if not has_real_device_evidence and any(claim in conclusion for claim in UNSAFE_REAL_DEVICE_CLAIMS):
             conclusion = (
                 f"不确定：生成内容超出 {highest.value} 证据边界，不能认定真机验收通过。"
