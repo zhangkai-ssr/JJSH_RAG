@@ -53,6 +53,13 @@ class MetadataTest(unittest.TestCase):
                 {"1.6_R6/README.md": {"status": "maybe"}},
             )
 
+    def test_superpowers_plan_is_draft_design_evidence(self):
+        fields = infer_document_fields(
+            "1.6_R6/docs/superpowers/plans/2026-08-25-private-channel.md"
+        )
+        self.assertEqual("draft", fields.status)
+        self.assertEqual(EvidenceLevel.DESIGN_PROPOSED, fields.evidence_level)
+
 
 if __name__ == "__main__":
     unittest.main()

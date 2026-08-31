@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 from .answering import Answerer, HttpLlmProvider
+from .evaluator import evaluate_cases, load_cases
 from .indexer import SourcePolicy, index_repository
 from .retriever import HttpEmbeddingProvider, Retriever
 from .store import KnowledgeStore
@@ -14,6 +15,14 @@ from .store import KnowledgeStore
 
 ALLOWED_VERSIONS = ("1.6_R6",)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _configure_utf8_output() -> None:
+    """让 Windows 控制台稳定输出含工程符号的 JSON。"""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -49,6 +58,13 @@ def build_parser() -> argparse.ArgumentParser:
         _add_common_arguments(command)
         command.add_argument("--query", required=True)
         command.add_argument("--limit", type=int, default=8)
+    evaluate_parser = subparsers.add_parser("evaluate", help="运行 R6 黄金评估集")
+    _add_common_arguments(evaluate_parser)
+    evaluate_parser.add_argument(
+        "--cases",
+        type=Path,
+        default=PROJECT_ROOT / "evals" / "v1_6_r6.jsonl",
+    )
     return parser
 
 
@@ -75,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         成功为 0；索引包含文件错误时为 1；运行条件不满足时为 2。
     """
+    _configure_utf8_output()
     args = build_parser().parse_args(argv)
     store = KnowledgeStore(args.database)
     try:
@@ -88,6 +105,14 @@ def main(argv: list[str] | None = None) -> int:
 
         metadata = _require_index(store, args.version)
         retriever = Retriever(store, HttpEmbeddingProvider.from_environment())
+        if args.command == "evaluate":
+            report = evaluate_cases(
+                retriever,
+                Answerer(HttpLlmProvider.from_environment()),
+                load_cases(args.cases),
+            )
+            print(json.dumps(asdict(report), ensure_ascii=False, indent=2))
+            return 0 if report.passed else 1
         results = retriever.search(args.query, args.version, args.limit)
         if args.command == "search":
             payload = {

@@ -75,6 +75,25 @@ class KnowledgeStoreTest(unittest.TestCase):
         self.assertEqual([], self.store.search("删除词", "1.6_R6"))
         self.assertEqual(1, self.store.chunk_count("1.6_R6"))
 
+    def test_multiple_engineering_identifiers_rank_by_coverage(self):
+        expected_document, expected_chunk = make_document(
+            "1.6_R6", "1.6_R6/hardware/compat.md", "ADS1298 DRDY_A 连接 GPIO14"
+        )
+        partial_document, partial_chunk = make_document(
+            "1.6_R6", "1.6_R6/main/noise.md", "ADS1298 普通说明"
+        )
+        self.store.replace_document(partial_document, [partial_chunk])
+        self.store.replace_document(expected_document, [expected_chunk])
+        results = self.store.search("R6 ADS1298 DRDY_A GPIO14", "1.6_R6")
+        self.assertEqual(expected_chunk.chunk_id, results[0].chunk_id)
+
+    def test_partial_identifier_match_is_rejected_as_insufficient_evidence(self):
+        document, chunk = make_document(
+            "1.6_R6", "1.6_R6/main/power.md", "nPM1300 包含 BUCK2 电源轨"
+        )
+        self.store.replace_document(document, [chunk])
+        self.assertEqual([], self.store.search("BK7258QN8868 BUCK2", "1.6_R6"))
+
 
 if __name__ == "__main__":
     unittest.main()

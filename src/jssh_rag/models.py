@@ -204,11 +204,17 @@ def infer_document_fields(
     else:
         module = top_module
     selected = (overrides or {}).get(path.as_posix(), {})
-    status = selected.get("status", "current")
+    is_design_plan = "/docs/superpowers/plans/" in f"/{path.as_posix()}"
+    status = selected.get("status", "draft" if is_design_plan else "current")
     if status not in VALID_STATUSES:
         raise ValueError(f"未知文档状态: {status}")
     try:
-        evidence = EvidenceLevel(selected.get("evidence_level", "source_reviewed"))
+        evidence = EvidenceLevel(
+            selected.get(
+                "evidence_level",
+                "design_proposed" if is_design_plan else "source_reviewed",
+            )
+        )
     except ValueError as exc:
         raise ValueError(f"未知证据等级: {selected.get('evidence_level')}") from exc
     return DocumentFields(

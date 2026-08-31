@@ -2,7 +2,9 @@
 
 from pathlib import Path
 from datetime import UTC, datetime
+from dataclasses import replace
 import json
+import math
 import re
 import sqlite3
 from typing import Iterable
@@ -201,40 +203,82 @@ class KnowledgeStore:
         """
         if not query.strip() or not hardware_version:
             raise ValueError("查询和硬件版本不能为空")
-        select = """
-            SELECT c.*, d.hardware_version, d.relative_path, d.git_commit,
-                   d.source_sha256, d.document_type, d.module, d.status,
-                   d.evidence_level, ? AS score
-            FROM chunks c JOIN documents d ON d.document_id = c.document_id
-        """
-        exact_rows = self.connection.execute(
-            select + " WHERE d.hardware_version = ? AND instr(lower(c.content), lower(?)) > 0 LIMIT ?",
-            (0.0, hardware_version, query.strip(), limit),
-        ).fetchall()
-        results = self._rows_to_results(exact_rows)
-        seen = {item.chunk_id for item in results}
-        remaining = limit - len(results)
-        if remaining <= 0:
-            return results
-        tokens = re.findall(r"[A-Za-z0-9_+.:-]+|[\u3400-\u9fff]{2,}", query)
-        if not tokens:
-            return results
-        match_query = " OR ".join(f'"{token.replace(chr(34), chr(34) * 2)}"' for token in tokens)
-        fts_rows = self.connection.execute(
+        ascii_tokens = [
+            token.casefold()
+            for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9_+.:-]*", query)
+            if len(token) >= 2
+        ]
+        strong_tokens = [
+            token
+            for token in ascii_tokens
+            if any(character.isdigit() for character in token)
+            or "_" in token
+            or (len(token) >= 3 and token.upper() == token)
+        ]
+        cjk_stop = {"什么", "如何", "是否", "哪个", "关系", "说明", "当前", "其中", "以及", "能否", "怎样"}
+        cjk_bigrams = {
+            sequence[index : index + 2]
+            for sequence in re.findall(r"[\u3400-\u9fff]+", query)
+            for index in range(max(0, len(sequence) - 1))
+            if sequence[index : index + 2] not in cjk_stop
+        }
+        match_tokens = list(dict.fromkeys(ascii_tokens + sorted(cjk_bigrams)))
+        fts_rank: dict[str, int] = {}
+        if match_tokens:
+            match_query = " OR ".join(
+                f'"{token.replace(chr(34), chr(34) * 2)}"' for token in match_tokens
+            )
+            try:
+                rows = self.connection.execute(
+                    """
+                    SELECT chunks_fts.chunk_id
+                    FROM chunks_fts
+                    JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id
+                    JOIN documents d ON d.document_id = c.document_id
+                    WHERE chunks_fts MATCH ? AND d.hardware_version = ?
+                    ORDER BY bm25(chunks_fts) LIMIT 200
+                    """,
+                    (match_query, hardware_version),
+                ).fetchall()
+                fts_rank = {row[0]: rank for rank, row in enumerate(rows, 1)}
+            except sqlite3.OperationalError:
+                fts_rank = {}
+        rows = self.connection.execute(
             """
             SELECT c.*, d.hardware_version, d.relative_path, d.git_commit,
                    d.source_sha256, d.document_type, d.module, d.status,
-                   d.evidence_level, bm25(chunks_fts) AS score
-            FROM chunks_fts
-            JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id
-            JOIN documents d ON d.document_id = c.document_id
-            WHERE chunks_fts MATCH ? AND d.hardware_version = ?
-            ORDER BY score LIMIT ?
+                   d.evidence_level, 0.0 AS score
+            FROM chunks c JOIN documents d ON d.document_id = c.document_id
+            WHERE d.hardware_version = ?
             """,
-            (match_query, hardware_version, limit * 2),
+            (hardware_version,),
         ).fetchall()
-        results.extend(item for item in self._rows_to_results(fts_rows) if item.chunk_id not in seen)
-        return results[:limit]
+        ranked: list[tuple[float, RetrievedChunk]] = []
+        required_strong = len(strong_tokens) if len(strong_tokens) <= 2 else math.ceil(len(strong_tokens) * 0.6)
+        compact_query = re.sub(r"\s+", " ", query.strip()).casefold()
+        for item in self._rows_to_results(rows):
+            content = item.content.casefold()
+            location = f"{item.relative_path} {item.heading_or_symbol}".casefold()
+            haystack = f"{location}\n{content}"
+            matched_strong = sum(token in haystack for token in strong_tokens)
+            if strong_tokens and matched_strong < required_strong:
+                continue
+            matched_ascii = sum(token in haystack for token in ascii_tokens)
+            matched_cjk = sum(token in haystack for token in cjk_bigrams)
+            required_cjk = len(cjk_bigrams) if len(cjk_bigrams) <= 3 else max(1, math.ceil(len(cjk_bigrams) * 0.15))
+            if not strong_tokens and not matched_ascii and matched_cjk < required_cjk:
+                continue
+            score = matched_strong * 10.0 + matched_ascii * 2.0
+            if cjk_bigrams:
+                score += 5.0 * matched_cjk / len(cjk_bigrams)
+            if compact_query and compact_query in haystack:
+                score += 20.0
+            score += sum(1.0 for token in ascii_tokens if token in location)
+            if item.chunk_id in fts_rank:
+                score += 1.0 / fts_rank[item.chunk_id]
+            ranked.append((score, replace(item, score=score)))
+        ranked.sort(key=lambda pair: pair[0], reverse=True)
+        return [item for _, item in ranked[:limit]]
 
     def chunk_count(self, hardware_version: str) -> int:
         """返回指定版本的知识块数量。"""

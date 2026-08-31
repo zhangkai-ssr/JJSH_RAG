@@ -18,6 +18,10 @@ python -m pip install -e .
 jssh-rag index --version 1.6_R6
 jssh-rag search --version 1.6_R6 --query "ADS1298 DRDY如何连接"
 jssh-rag ask --version 1.6_R6 --query "当前R6是否已经完成真机验收"
+jssh-rag evaluate --version 1.6_R6
 ```
 
 本地数据库默认写入 `data/jssh_rag.sqlite3`，该目录不会进入 Git。
+
+默认完全离线运行。只有经过批准需要私有语义检索或生成式结论时，才分别设置
+`JSSH_RAG_EMBEDDING_URL`、`JSSH_RAG_LLM_URL`；未设置时不会向任何模型服务发送文本。
