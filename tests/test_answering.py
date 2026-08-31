@@ -96,6 +96,74 @@ class AnswererTest(unittest.TestCase):
         self.assertTrue(any("superseded" in item for item in answer.unvalidated))
         self.assertEqual(2, len(answer.citations))
 
+    def test_deterministic_summary_skips_markdown_heading(self):
+        answer = Answerer().answer(
+            "BUCK1 给哪些器件供电？",
+            "1.6_R6",
+            [result("## 启动与电源边界\nBUCK1 为 IMU 与 Flash 供电。", EvidenceLevel.SOURCE_REVIEWED)],
+        )
+        self.assertIn("BUCK1 为 IMU 与 Flash 供电", answer.conclusion)
+        self.assertNotEqual("基于 1.6_R6 的 source_reviewed 证据：启动与电源边界", answer.conclusion)
+
+    def test_real_device_question_keeps_fact_and_boundary(self):
+        answer = Answerer().answer(
+            "R67 接到哪里，是否已经完成真机验收？",
+            "1.6_R6",
+            [result("R67 100 Ω 接 GPIO48，仅作硬件观测，仍待真机验证。", EvidenceLevel.SOURCE_REVIEWED)],
+        )
+        self.assertIn("GPIO48", answer.conclusion)
+        self.assertIn("不能据此认定真机验收通过", answer.conclusion)
+
+    def test_system_acceptance_wording_uses_same_real_device_boundary(self):
+        answer = Answerer().answer(
+            "短时录制能否证明整机验收完成？",
+            "1.6_R6",
+            [result("短时录制未发现丢帧。", EvidenceLevel.SOURCE_REVIEWED)],
+        )
+        self.assertIn("不能据此认定真机验收通过", answer.conclusion)
+
+    def test_only_non_current_sources_do_not_become_current_conclusion(self):
+        superseded = RetrievedChunk(
+            **{
+                **result("R67 设为 NC。", EvidenceLevel.SOURCE_REVIEWED).__dict__,
+                "status": "superseded",
+            }
+        )
+        answer = Answerer().answer("R67 当前怎么连接？", "1.6_R6", [superseded])
+        self.assertIn("仅检索到非 current 来源", answer.conclusion)
+        self.assertNotIn("基于 1.6_R6", answer.conclusion)
+
+    def test_deterministic_summary_prefers_query_relevant_table_row(self):
+        content = """## 变更记录
+本表只追加已经发生的交换。
+| 日期 | 范围 | 摘要 |
+| --- | --- | --- |
+| 2026-08-28 | Wi-Fi 功率 | 低档调整为 15 dBm |
+| 2026-08-25 | ESP-NOW 信道切换 | 双端 ACK 流程仍待真机验证 |
+"""
+        answer = Answerer().answer(
+            "ESP-NOW 信道切换流程是什么？",
+            "1.6_R6",
+            [result(content, EvidenceLevel.SOURCE_REVIEWED)],
+        )
+        self.assertIn("ESP-NOW 信道切换", answer.conclusion)
+        self.assertNotIn("本表只追加", answer.conclusion)
+
+    def test_compound_question_summarizes_each_clause(self):
+        answer = Answerer().answer(
+            "R67 如何连接？双 ADS 如何读取？",
+            "1.6_R6",
+            [
+                result(
+                    "R67 100 Ω 接 GPIO48。\n双 ADS 使用独立 CS 依次读取。",
+                    EvidenceLevel.SOURCE_REVIEWED,
+                )
+            ],
+        )
+
+        self.assertIn("R67 100 Ω 接 GPIO48", answer.conclusion)
+        self.assertIn("双 ADS 使用独立 CS 依次读取", answer.conclusion)
+
 
 if __name__ == "__main__":
     unittest.main()

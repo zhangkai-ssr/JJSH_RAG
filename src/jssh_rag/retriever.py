@@ -4,6 +4,7 @@ from dataclasses import replace
 import json
 import math
 import os
+import re
 from typing import Protocol
 from urllib.request import Request, urlopen
 
@@ -124,11 +125,23 @@ class Retriever:
         """
         if not hardware_version:
             raise ValueError("必须指定硬件版本")
-        lexical = self.store.search(query, hardware_version, max(limit * 2, 8))
+        clauses = [
+            part.strip()
+            for part in re.split(r"[，,；;。！？?]+", query)
+            if len(part.strip()) >= 2
+        ]
+        lexical_queries = list(dict.fromkeys([query, *clauses]))
+        lexical = [
+            (
+                2.0 if item_query == query else 1.0,
+                self.store.search(item_query, hardware_version, max(limit * 4, 16)),
+            )
+            for item_query in lexical_queries
+        ]
         semantic = self._semantic(query, hardware_version)
         scores: dict[str, float] = {}
         chunks: dict[str, RetrievedChunk] = {}
-        for weight, items in ((2.0, lexical), (1.0, semantic)):
+        for weight, items in [*lexical, (1.0, semantic)]:
             for rank, item in enumerate(items, 1):
                 if item.hardware_version != hardware_version:
                     raise RuntimeError("检索器检测到跨版本污染")

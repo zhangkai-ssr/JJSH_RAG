@@ -100,7 +100,8 @@ class CliTest(unittest.TestCase):
             {"conclusion", "hardware_version", "evidence_level", "citations", "validated", "unvalidated", "next_step"},
             set(payload),
         )
-        self.assertIn("不确定", payload["conclusion"])
+        self.assertIn("ADS1298 DRDY 源码已检查", payload["conclusion"])
+        self.assertIn("不能据此认定真机验收通过", payload["conclusion"])
 
     def test_evaluate_prints_acceptance_metrics(self):
         cases = self.database.with_name("cases.jsonl")

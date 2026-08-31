@@ -3,5 +3,43 @@
     "status": "current",
     "evidence_level": "source_reviewed"
   },
-  "paths": {}
+  "paths": {
+    "1.6_R6/hardware/COMPATIBILITY.md": {
+      "status": "current",
+      "evidence_level": "source_reviewed",
+      "priority": 100
+    },
+    "1.6_R6/main/drivers/README.md": {
+      "status": "current",
+      "evidence_level": "source_reviewed",
+      "priority": 90
+    },
+    "1.6_R6/main/services/README.md": {
+      "status": "current",
+      "evidence_level": "source_reviewed",
+      "priority": 80
+    },
+    "1.6_R6/main/services/docs/communication-protocol.md": {
+      "status": "current",
+      "evidence_level": "source_reviewed",
+      "priority": 80
+    },
+    "1.6_R6/validation/README.md": {
+      "status": "current",
+      "evidence_level": "source_reviewed",
+      "priority": 80
+    },
+    "1.6_R6/docs/V1.6_N8R8与ADS1298-B_DRDY引脚冲突说明.md": {
+      "status": "superseded",
+      "evidence_level": "source_reviewed"
+    },
+    "1.6_R6/docs/V1.6双ADS1298单RLD与充电接触共模改善方案.md": {
+      "status": "superseded",
+      "evidence_level": "source_reviewed"
+    },
+    "1.6_R6/docs/V1.6_EMG与IMU硬件同步方案.md": {
+      "status": "draft",
+      "evidence_level": "design_proposed"
+    }
+  }
 }

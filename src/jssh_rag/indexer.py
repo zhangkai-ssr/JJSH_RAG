@@ -233,7 +233,7 @@ def _run_git(repository: Path, *args: str, text: bool = True) -> str | bytes:
 def index_repository(
     policy: SourcePolicy,
     store: KnowledgeStore,
-    overrides: dict[str, dict[str, str]],
+    overrides: dict[str, dict[str, str | int]],
 ) -> IndexReport:
     """只读索引 Git 跟踪且与 HEAD 身份一致的版本语料。
 
@@ -284,6 +284,7 @@ def index_repository(
                 module=fields.module,
                 status=fields.status,
                 evidence_level=fields.evidence_level,
+                priority=fields.priority,
             )
             chunks = parse_document(document, text)
             store.replace_document(document, chunks)
