@@ -146,6 +146,31 @@ class RetrievedChunk:
     score: float
 
 
+@dataclass(frozen=True)
+class Citation:
+    """回答中可直接定位并校验的源文件引用。"""
+
+    relative_path: str
+    heading_or_symbol: str
+    start_line: int
+    end_line: int
+    git_commit: str
+    source_sha256: str
+
+
+@dataclass(frozen=True)
+class RagAnswer:
+    """固定呈现版本、证据、引用与未验证边界的回答。"""
+
+    conclusion: str
+    hardware_version: str
+    evidence_level: str
+    citations: list[Citation]
+    validated: list[str]
+    unvalidated: list[str]
+    next_step: str | None
+
+
 def infer_document_fields(
     relative_path: str,
     overrides: Mapping[str, Mapping[str, str]] | None = None,

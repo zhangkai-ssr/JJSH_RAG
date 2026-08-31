@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from datetime import UTC, datetime
+import json
 import re
 import sqlite3
 from typing import Iterable
@@ -58,6 +59,10 @@ class KnowledgeStore:
                 source_repository TEXT NOT NULL,
                 git_commit TEXT NOT NULL,
                 indexed_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS embeddings (
+                cache_key TEXT PRIMARY KEY,
+                vector_json TEXT NOT NULL
             );
             """
         )
@@ -274,3 +279,32 @@ class KnowledgeStore:
             "SELECT * FROM index_metadata WHERE hardware_version = ?",
             (hardware_version,),
         ).fetchone()
+
+    def all_chunks(self, hardware_version: str) -> list[RetrievedChunk]:
+        """返回指定版本的全部知识块供本地语义重排。"""
+        rows = self.connection.execute(
+            """
+            SELECT c.*, d.hardware_version, d.relative_path, d.git_commit,
+                   d.source_sha256, d.document_type, d.module, d.status,
+                   d.evidence_level, 0.0 AS score
+            FROM chunks c JOIN documents d ON d.document_id = c.document_id
+            WHERE d.hardware_version = ?
+            """,
+            (hardware_version,),
+        ).fetchall()
+        return self._rows_to_results(rows)
+
+    def get_embedding(self, cache_key: str) -> list[float] | None:
+        """读取一个知识块的缓存向量。"""
+        row = self.connection.execute(
+            "SELECT vector_json FROM embeddings WHERE cache_key = ?", (cache_key,)
+        ).fetchone()
+        return [float(item) for item in json.loads(row[0])] if row else None
+
+    def set_embedding(self, cache_key: str, vector: list[float]) -> None:
+        """保存一个由来源哈希和 chunk 标识确定的向量。"""
+        with self.connection:
+            self.connection.execute(
+                "INSERT OR REPLACE INTO embeddings VALUES (?, ?)",
+                (cache_key, json.dumps(vector, separators=(",", ":"))),
+            )
