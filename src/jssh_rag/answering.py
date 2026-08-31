@@ -17,6 +17,7 @@ REAL_DEVICE_LEVELS = {
 }
 PENDING_MARKERS = ("待验证", "未验证", "未完成", "不代表", "尚未", "待真机")
 UNSAFE_REAL_DEVICE_CLAIMS = ("真机通过", "真机验证通过", "已完成真机验收", "真机验收完成")
+REAL_DEVICE_QUERY_MARKERS = ("真机", "实板", "整机验收", "量产验收")
 
 
 class LlmProvider(Protocol):
@@ -66,8 +67,47 @@ class HttpLlmProvider:
 
 def _sentences(content: str) -> list[str]:
     """把知识块压缩为可呈现的非标题句子。"""
-    normalized = re.sub(r"^#{1,6}\s*", "", content.strip(), flags=re.MULTILINE)
+    normalized = "\n".join(
+        line for line in content.strip().splitlines() if not re.match(r"^\s*#{1,6}\s+", line)
+    )
     return [item.strip() for item in re.split(r"[。！？\n]+", normalized) if item.strip()]
+
+
+def _rank_sentences(sentences: list[str], query: str) -> list[str]:
+    """优先返回与问题标识符和中文词组直接重合的非表头句子。"""
+    ascii_terms = re.findall(r"[A-Za-z0-9][A-Za-z0-9_+.:-]*", query.casefold())
+    cjk_terms = {
+        sequence[index : index + 2]
+        for sequence in re.findall(r"[\u3400-\u9fff]+", query)
+        for index in range(max(0, len(sequence) - 1))
+    }
+    terms = [term for term in ascii_terms if len(term) >= 2] + sorted(cjk_terms)
+    candidates: list[tuple[int, int, str]] = []
+    for index, sentence in enumerate(sentences):
+        cells = [cell.strip() for cell in sentence.strip("|").split("|")]
+        if sentence.startswith("|") and cells and (
+            cells[0] in {"日期", "分类", "器件", "网络", "流", "等级"}
+            or all(not cell.strip("-: ") for cell in cells)
+        ):
+            continue
+        folded = sentence.casefold()
+        candidates.append((sum(term in folded for term in terms), -index, sentence))
+    return [sentence for _, _, sentence in sorted(candidates, reverse=True)]
+
+
+def _summaries(sentences: list[str], query: str) -> list[str]:
+    """为复合问题的各子句各选择一条去重事实。"""
+    clauses = [
+        part.strip()
+        for part in re.split(r"[，,；;。！？?]+", query)
+        if len(part.strip()) >= 2
+    ] or [query]
+    selected: list[str] = []
+    for clause in clauses:
+        ranked = _rank_sentences(sentences, clause)
+        if ranked and ranked[0] not in selected:
+            selected.append(ranked[0])
+    return selected[:4]
 
 
 class Answerer:
@@ -108,7 +148,8 @@ class Answerer:
                 unvalidated=["没有目标版本证据，不能用其他版本代替。"],
                 next_step="补充或修正目标版本的 Git 跟踪资料后重新索引。",
             )
-        active = [item for item in retrieved if item.status == "current"] or retrieved
+        current = [item for item in retrieved if item.status == "current"]
+        active = current or retrieved
         highest = max(
             (item.evidence_level for item in active),
             key=EVIDENCE_ORDER.index,
@@ -139,11 +180,15 @@ class Answerer:
                 for sentence in item_sentences
                 if any(marker in sentence for marker in PENDING_MARKERS)
             )
-        validated = validated[:5]
+        ranked_validated = _rank_sentences(validated, query)
+        ranked_all = _rank_sentences(all_sentences, query)
+        summaries = _summaries(validated or all_sentences, query)
+        validated = ranked_validated[:5]
         has_real_device_evidence = any(
             item.status == "current" and item.evidence_level in REAL_DEVICE_LEVELS
             for item in retrieved
         )
+        asks_for_real_device = any(marker in query for marker in REAL_DEVICE_QUERY_MARKERS)
         conflicting_status = any(item.status != "current" for item in retrieved) and any(
             item.status == "current" for item in retrieved
         )
@@ -151,16 +196,23 @@ class Answerer:
             unvalidated.append("检索结果同时包含 current 与 superseded/draft/archive 状态来源，必须并列核对。")
         if not has_real_device_evidence:
             unvalidated.append(f"未找到 {hardware_version} 真机验收证据。")
+        if not current:
+            unvalidated.append("仅检索到非 current 来源，不能作为当前实现结论。")
+        summary = "；".join(summaries) if summaries else (
+            ranked_all[0] if ranked_all else retrieved[0].heading_or_symbol
+        )
         evidence_text = "\n\n".join(
             f"[{index}] {item.relative_path}:{item.start_line}-{item.end_line}\n{item.content}"
             for index, item in enumerate(retrieved, 1)
         )
-        if conflicting_status:
+        if not current:
+            conclusion = "不确定：仅检索到非 current 来源，不能据此给出当前实现结论。"
+        elif conflicting_status:
             conclusion = "资料状态存在冲突：同时检索到 current 与非 current 来源，不能直接选择单一结论。"
-        elif "真机" in query and not has_real_device_evidence:
+        elif asks_for_real_device and not has_real_device_evidence:
             conclusion = (
-                f"不确定：现有 {hardware_version} 证据最高为 {highest.value}，"
-                "不能据此认定真机验收通过。"
+                f"基于 {hardware_version} 的 {highest.value} 证据：{summary}；"
+                "但未找到真机验收证据，不能据此认定真机验收通过。"
             )
         elif self.llm_provider is not None:
             prompt = (
@@ -170,7 +222,6 @@ class Answerer:
             )
             conclusion = self.llm_provider.complete(prompt)
         else:
-            summary = validated[0] if validated else all_sentences[0]
             conclusion = f"基于 {hardware_version} 的 {highest.value} 证据：{summary}"
         if not has_real_device_evidence and any(claim in conclusion for claim in UNSAFE_REAL_DEVICE_CLAIMS):
             conclusion = (

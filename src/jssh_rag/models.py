@@ -33,6 +33,7 @@ class DocumentFields:
     module: str
     status: str
     evidence_level: EvidenceLevel
+    priority: int
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ class DocumentMeta:
     module: str
     status: str
     evidence_level: EvidenceLevel
+    priority: int = 0
 
     def __post_init__(self) -> None:
         """拒绝无法追溯或不属于受控状态的文档。"""
@@ -64,6 +66,8 @@ class DocumentMeta:
             raise ValueError("正式索引缺少版本、来源或分类字段")
         if self.status not in VALID_STATUSES:
             raise ValueError(f"未知文档状态: {self.status}")
+        if not isinstance(self.priority, int) or self.priority < 0:
+            raise ValueError(f"无效文档优先级: {self.priority}")
 
     @property
     def document_id(self) -> str:
@@ -144,6 +148,7 @@ class RetrievedChunk:
     end_line: int
     content: str
     score: float
+    priority: int = 0
 
 
 @dataclass(frozen=True)
@@ -173,7 +178,7 @@ class RagAnswer:
 
 def infer_document_fields(
     relative_path: str,
-    overrides: Mapping[str, Mapping[str, str]] | None = None,
+    overrides: Mapping[str, Mapping[str, str | int]] | None = None,
 ) -> DocumentFields:
     """根据仓库相对路径推断保守元数据，并应用精确路径覆盖。
 
@@ -217,9 +222,13 @@ def infer_document_fields(
         )
     except ValueError as exc:
         raise ValueError(f"未知证据等级: {selected.get('evidence_level')}") from exc
+    priority = selected.get("priority", 0)
+    if not isinstance(priority, int) or priority < 0:
+        raise ValueError(f"无效文档优先级: {priority}")
     return DocumentFields(
         document_type=suffix_types.get(path.suffix.lower(), "text"),
         module=module,
         status=status,
         evidence_level=evidence,
+        priority=priority,
     )

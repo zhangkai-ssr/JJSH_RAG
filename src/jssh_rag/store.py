@@ -41,6 +41,7 @@ class KnowledgeStore:
                 module TEXT NOT NULL,
                 status TEXT NOT NULL,
                 evidence_level TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(hardware_version, relative_path)
             );
             CREATE TABLE IF NOT EXISTS chunks (
@@ -68,6 +69,13 @@ class KnowledgeStore:
             );
             """
         )
+        columns = {
+            row[1] for row in self.connection.execute("PRAGMA table_info(documents)").fetchall()
+        }
+        if "priority" not in columns:
+            self.connection.execute(
+                "ALTER TABLE documents ADD COLUMN priority INTEGER NOT NULL DEFAULT 0"
+            )
         self.connection.commit()
 
     def close(self) -> None:
@@ -98,7 +106,10 @@ class KnowledgeStore:
             self.connection.execute("DELETE FROM chunks WHERE document_id = ?", (document.document_id,))
             self.connection.execute(
                 """
-                INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO documents (
+                    document_id, product, hardware_version, relative_path, git_commit,
+                    source_sha256, document_type, module, status, evidence_level, priority
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(document_id) DO UPDATE SET
                     product=excluded.product,
                     hardware_version=excluded.hardware_version,
@@ -108,7 +119,8 @@ class KnowledgeStore:
                     document_type=excluded.document_type,
                     module=excluded.module,
                     status=excluded.status,
-                    evidence_level=excluded.evidence_level
+                    evidence_level=excluded.evidence_level,
+                    priority=excluded.priority
                 """,
                 (
                     document.document_id,
@@ -121,6 +133,7 @@ class KnowledgeStore:
                     document.module,
                     document.status,
                     document.evidence_level.value,
+                    document.priority,
                 ),
             )
             self.connection.executemany(
@@ -186,6 +199,7 @@ class KnowledgeStore:
                 end_line=row["end_line"],
                 content=row["content"],
                 score=float(row["score"]),
+                priority=int(row["priority"]),
             )
             for row in rows
         ]
@@ -247,7 +261,7 @@ class KnowledgeStore:
             """
             SELECT c.*, d.hardware_version, d.relative_path, d.git_commit,
                    d.source_sha256, d.document_type, d.module, d.status,
-                   d.evidence_level, 0.0 AS score
+                   d.evidence_level, d.priority, 0.0 AS score
             FROM chunks c JOIN documents d ON d.document_id = c.document_id
             WHERE d.hardware_version = ?
             """,
@@ -276,6 +290,7 @@ class KnowledgeStore:
             score += sum(1.0 for token in ascii_tokens if token in location)
             if item.chunk_id in fts_rank:
                 score += 1.0 / fts_rank[item.chunk_id]
+            score += item.priority / 100.0
             ranked.append((score, replace(item, score=score)))
         ranked.sort(key=lambda pair: pair[0], reverse=True)
         return [item for _, item in ranked[:limit]]
@@ -330,7 +345,7 @@ class KnowledgeStore:
             """
             SELECT c.*, d.hardware_version, d.relative_path, d.git_commit,
                    d.source_sha256, d.document_type, d.module, d.status,
-                   d.evidence_level, 0.0 AS score
+                   d.evidence_level, d.priority, 0.0 AS score
             FROM chunks c JOIN documents d ON d.document_id = c.document_id
             WHERE d.hardware_version = ?
             """,

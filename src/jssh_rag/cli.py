@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_overrides(path: Path) -> dict[str, dict[str, str]]:
+def _load_overrides(path: Path) -> dict[str, dict[str, str | int]]:
     """读取受控元数据覆盖中的精确路径映射。"""
     payload = json.loads(path.read_text(encoding="utf-8"))
     return dict(payload.get("paths", {}))
