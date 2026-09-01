@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jssh_rag.models import Chunk, DocumentMeta, EvidenceLevel
+from jssh_rag.models import Chunk, DocumentMeta, EvidenceLevel, RetrievedChunk
 from jssh_rag.retriever import Retriever
 from jssh_rag.store import KnowledgeStore
 
@@ -50,6 +50,29 @@ def add_document(
     chunk = Chunk.create(document, "测试", 1, 1, content)
     store.replace_document(document, [chunk])
     return chunk
+
+
+def retrieved_result(index: int, priority: int = 0) -> RetrievedChunk:
+    """构造具有固定身份和优先级的融合排序结果。"""
+    identity = f"{index:064d}"
+    return RetrievedChunk(
+        chunk_id=identity,
+        document_id=identity,
+        hardware_version="1.6_R6",
+        relative_path=f"1.6_R6/docs/{index}.md",
+        git_commit="a" * 40,
+        source_sha256="b" * 64,
+        document_type="markdown",
+        module="docs",
+        status="current",
+        evidence_level=EvidenceLevel.SOURCE_REVIEWED,
+        heading_or_symbol="测试",
+        start_line=1,
+        end_line=1,
+        content="R67 DRDY_B",
+        score=1.0,
+        priority=priority,
+    )
 
 
 class RetrieverTest(unittest.TestCase):
@@ -189,6 +212,24 @@ class RetrieverTest(unittest.TestCase):
         self.assertEqual(formal.chunk_id, results[0].chunk_id)
         self.assertIn(historical.chunk_id, {item.chunk_id for item in results})
 
+    def test_controlled_priority_breaks_only_equal_fusion_scores(self):
+        low_priority = retrieved_result(1)
+        high_priority = retrieved_result(2, priority=100)
+
+        class EqualScoreStore:
+            def search(self, query, hardware_version, limit):
+                if "，" in query:
+                    return [low_priority, high_priority]
+                if query == "alpha":
+                    return [high_priority]
+                return []
+
+        results = Retriever(EqualScoreStore()).search(
+            "alpha，beta", "1.6_R6", limit=2
+        )
+
+        self.assertEqual(high_priority.chunk_id, results[0].chunk_id)
+
     def test_priority_does_not_replace_query_relevance(self):
         add_document(
             self.store,
@@ -207,6 +248,52 @@ class RetrieverTest(unittest.TestCase):
         results = self.retriever.search("信道切换双端流程", "1.6_R6", limit=2)
 
         self.assertEqual(relevant.chunk_id, results[0].chunk_id)
+
+    def test_fusion_priority_cannot_move_fourth_above_third(self):
+        class OrderedStore:
+            def search(self, query, hardware_version, limit):
+                return [retrieved_result(index, 100 if index == 4 else 0) for index in range(1, 5)]
+
+        results = Retriever(OrderedStore()).search("R67 DRDY_B", "1.6_R6", limit=4)
+
+        self.assertEqual(retrieved_result(3).chunk_id, results[2].chunk_id)
+        self.assertEqual(retrieved_result(4).chunk_id, results[3].chunk_id)
+
+    def test_fusion_priority_cannot_move_sixth_into_top_five(self):
+        class OrderedStore:
+            def search(self, query, hardware_version, limit):
+                return [retrieved_result(index, 100 if index == 6 else 0) for index in range(1, 7)]
+
+        results = Retriever(OrderedStore()).search("R67 DRDY_B", "1.6_R6", limit=6)
+
+        self.assertEqual(retrieved_result(5).chunk_id, results[4].chunk_id)
+        self.assertEqual(retrieved_result(6).chunk_id, results[5].chunk_id)
+
+    def test_priority_cannot_cross_small_multi_list_score_gap(self):
+        more_relevant = retrieved_result(100)
+        high_priority = retrieved_result(101, priority=100)
+
+        class MultiListStore:
+            def search(self, query, hardware_version, limit):
+                if "，" in query:
+                    return [retrieved_result(1), retrieved_result(2), more_relevant, high_priority]
+                if query == "alpha":
+                    return [retrieved_result(3), high_priority, more_relevant]
+                if query == "beta":
+                    return [retrieved_result(index) for index in range(10, 19)] + [
+                        more_relevant,
+                        high_priority,
+                    ]
+                return []
+
+        results = Retriever(MultiListStore()).search(
+            "alpha，beta", "1.6_R6", limit=20
+        )
+
+        self.assertLess(
+            [item.chunk_id for item in results].index(more_relevant.chunk_id),
+            [item.chunk_id for item in results].index(high_priority.chunk_id),
+        )
 
     def test_highly_relevant_draft_is_preserved_with_current_source(self):
         for index in range(3):

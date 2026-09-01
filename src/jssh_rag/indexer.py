@@ -1,6 +1,6 @@
 """只读发现 R6 正式语料并提供后续解析入口。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import ast
 import hashlib
 import json
@@ -11,6 +11,7 @@ from typing import Collection
 
 from .models import Chunk, DocumentMeta, infer_document_fields
 from .store import KnowledgeStore
+from .structured import parse_pdf, parse_xlsx_bom
 
 
 class SourceProvenanceError(RuntimeError):
@@ -27,6 +28,7 @@ class IndexReport:
     chunk_count: int
     removed_document_count: int
     errors: list[str]
+    warnings: list[str]
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,7 @@ class SourcePolicy:
     include_extensions: tuple[str, ...]
     exclude_segments: tuple[str, ...]
     tracked_files_only: bool
+    path_patterns: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
     def from_json(cls, path: Path) -> "SourcePolicy":
@@ -60,6 +63,10 @@ class SourcePolicy:
             include_extensions=tuple(item.lower() for item in data["include_extensions"]),
             exclude_segments=tuple(data["exclude_segments"]),
             tracked_files_only=bool(data["tracked_files_only"]),
+            path_patterns={
+                suffix.lower(): tuple(patterns)
+                for suffix, patterns in data.get("path_patterns", {}).items()
+            },
         )
 
     def accepts(
@@ -81,6 +88,13 @@ class SourcePolicy:
         if not normalized.startswith(f"{self.source_prefix}/"):
             return False
         if path.suffix.lower() not in self.include_extensions:
+            return False
+        suffix = path.suffix.lower()
+        patterns = self.path_patterns.get(suffix)
+        if suffix in {".xlsx", ".tel", ".pdf"}:
+            if not patterns or not any(path.match(pattern) for pattern in patterns):
+                return False
+        elif patterns and not any(path.match(pattern) for pattern in patterns):
             return False
         lowered = normalized.casefold()
         if any(
@@ -190,6 +204,29 @@ def _parse_text(document: DocumentMeta, text: str) -> list[Chunk]:
     return _chunks_from_boundaries(document, lines, boundaries)
 
 
+def _parse_protel_netlist(document: DocumentMeta, text: str) -> list[Chunk]:
+    """按 package 和 net 记录切分 Protel 文本网表，并保留续行。"""
+    lines = text.splitlines()
+    section = ""
+    boundaries: list[tuple[int, str]] = []
+    for number, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("$"):
+            section = stripped.upper()
+            boundaries.append((number, f"section {section}"))
+            continue
+        if section == "$PACKAGES" and "!" in stripped and not stripped.startswith(","):
+            package = stripped.split("!", 1)[0].strip()
+            if package:
+                boundaries.append((number, f"package {package}"))
+            continue
+        if section == "$NETS":
+            match = re.match(r"^(?:'([^']+)'|([^\s;]+))\s*;", stripped)
+            if match:
+                boundaries.append((number, f"net {match.group(1) or match.group(2)}"))
+    return _chunks_from_boundaries(document, lines, boundaries)
+
+
 def parse_document(document: DocumentMeta, text: str) -> list[Chunk]:
     """按文件类型确定性切分文档并保留准确行号。
 
@@ -212,6 +249,7 @@ def parse_document(document: DocumentMeta, text: str) -> list[Chunk]:
         "powershell": _parse_powershell,
         "json": _parse_json,
         "text": _parse_text,
+        "protel_netlist": _parse_protel_netlist,
     }
     parser = parsers.get(document.document_type, _parse_text)
     return parser(document, text)
@@ -269,10 +307,10 @@ def index_repository(
     document_count = 0
     chunk_count = 0
     errors: list[str] = []
+    warnings: list[str] = []
     for relative_path in accepted:
         try:
             raw = (repository / Path(relative_path)).read_bytes()
-            text = raw.decode("utf-8-sig")
             fields = infer_document_fields(relative_path, overrides)
             document = DocumentMeta(
                 product=policy.product,
@@ -286,7 +324,14 @@ def index_repository(
                 evidence_level=fields.evidence_level,
                 priority=fields.priority,
             )
-            chunks = parse_document(document, text)
+            if fields.document_type == "bom_xlsx":
+                chunks = parse_xlsx_bom(document, raw)
+            elif fields.document_type == "pdf":
+                pdf_warnings: list[str] = []
+                chunks = parse_pdf(document, raw, pdf_warnings)
+                warnings.extend(f"{relative_path}: {item}" for item in pdf_warnings)
+            else:
+                chunks = parse_document(document, raw.decode("utf-8-sig"))
             store.replace_document(document, chunks)
             indexed_paths.add(relative_path)
             document_count += 1
@@ -302,4 +347,5 @@ def index_repository(
         chunk_count=chunk_count,
         removed_document_count=removed,
         errors=errors,
+        warnings=warnings,
     )

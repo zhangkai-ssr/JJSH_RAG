@@ -86,6 +86,7 @@ class Chunk:
     start_line: int
     end_line: int
     content: str
+    source_locator: str = ""
 
     @classmethod
     def create(
@@ -128,6 +129,47 @@ class Chunk:
             content=content,
         )
 
+    @classmethod
+    def create_located(
+        cls,
+        document: DocumentMeta,
+        heading_or_symbol: str,
+        source_locator: str,
+        content: str,
+    ) -> "Chunk":
+        """为表格单元格或 PDF 页建立格式原生定位的知识块。
+
+        Args:
+            document: 知识块所属文档。
+            heading_or_symbol: BOM 行、页或其他结构化符号。
+            source_locator: 原格式可直接复核的位置，例如工作表单元格或页码。
+            content: 从该位置确定性提取的文本。
+
+        Returns:
+            不伪造文本行号的稳定知识块。
+        """
+        if not source_locator.strip() or not content.strip():
+            raise ValueError("结构化知识块定位符或内容无效")
+        identity = "\0".join(
+            (
+                document.document_id,
+                heading_or_symbol,
+                "0",
+                "0",
+                source_locator,
+                content,
+            )
+        )
+        return cls(
+            chunk_id=hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+            document_id=document.document_id,
+            heading_or_symbol=heading_or_symbol,
+            start_line=0,
+            end_line=0,
+            content=content,
+            source_locator=source_locator,
+        )
+
 
 @dataclass(frozen=True)
 class RetrievedChunk:
@@ -149,6 +191,7 @@ class RetrievedChunk:
     content: str
     score: float
     priority: int = 0
+    source_locator: str = ""
 
 
 @dataclass(frozen=True)
@@ -161,6 +204,7 @@ class Citation:
     end_line: int
     git_commit: str
     source_sha256: str
+    source_locator: str = ""
 
 
 @dataclass(frozen=True)
@@ -201,6 +245,9 @@ def infer_document_fields(
         ".ps1": "powershell",
         ".json": "json",
         ".txt": "text",
+        ".xlsx": "bom_xlsx",
+        ".tel": "protel_netlist",
+        ".pdf": "pdf",
     }
     parts = path.parts
     top_module = parts[1] if len(parts) > 1 else "root"

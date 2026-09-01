@@ -18,6 +18,7 @@ class EvaluationCase:
     required_sources: tuple[str, ...]
     forbidden_versions: tuple[str, ...]
     required_boundary: str
+    required_answer_terms: tuple[str, ...] = ()
     should_refuse: bool = False
 
 
@@ -72,6 +73,9 @@ def load_cases(path: Path) -> list[EvaluationCase]:
                 required_sources=tuple(payload.get("required_sources", [])),
                 forbidden_versions=tuple(payload.get("forbidden_versions", [])),
                 required_boundary=str(payload.get("required_boundary", "")),
+                required_answer_terms=tuple(
+                    str(item) for item in payload.get("required_answer_terms", [])
+                ),
                 should_refuse=bool(payload.get("should_refuse", False)),
             )
         )
@@ -119,6 +123,7 @@ def evaluate_cases(
                 item.relative_path,
                 item.start_line,
                 item.end_line,
+                item.source_locator,
                 item.git_commit,
                 item.source_sha256,
             )
@@ -129,6 +134,7 @@ def evaluate_cases(
                 citation.relative_path,
                 citation.start_line,
                 citation.end_line,
+                citation.source_locator,
                 citation.git_commit,
                 citation.source_sha256,
             )
@@ -148,10 +154,16 @@ def evaluate_cases(
         )
         if case.should_refuse:
             refusal_checks.append(refusal_ok)
+        answer_boundary_text = "\n".join((answer.conclusion, *answer.unvalidated))
+        required_terms_ok = all(
+            term in answer_boundary_text for term in case.required_answer_terms
+        )
         if case.should_refuse:
-            boundary_ok = "不确定" in answer.conclusion
+            boundary_ok = "不确定" in answer.conclusion and required_terms_ok
+        elif case.required_answer_terms:
+            boundary_ok = required_terms_ok
         elif "真机" in case.required_boundary:
-            boundary_ok = any("真机" in item for item in answer.unvalidated)
+            boundary_ok = "真机" in answer_boundary_text
         else:
             boundary_ok = True
         boundary_checks.append(boundary_ok)

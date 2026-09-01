@@ -40,7 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jssh-rag")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    index_parser = subparsers.add_parser("index", help="索引 Git 跟踪的 R6 正式文本")
+    index_parser = subparsers.add_parser(
+        "index",
+        help="索引 Git 跟踪的 R6 正式文本和受控结构化来源",
+    )
     _add_common_arguments(index_parser)
     index_parser.add_argument(
         "--source-config",

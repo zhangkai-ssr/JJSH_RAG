@@ -44,6 +44,16 @@ class MetadataTest(unittest.TestCase):
         self.assertEqual("current", fields.status)
         self.assertEqual(EvidenceLevel.SOURCE_REVIEWED, fields.evidence_level)
 
+    def test_structured_extensions_have_explicit_document_types(self):
+        cases = {
+            "1.6_R6/hardware/mainboard-top/source/BOM_board.xlsx": "bom_xlsx",
+            "1.6_R6/hardware/mainboard-top/schematic/Netlist_board.tel": "protel_netlist",
+            "1.6_R6/hardware/mainboard-top/schematic/SCH_board.pdf": "pdf",
+        }
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                self.assertEqual(expected, infer_document_fields(path).document_type)
+
     def test_controlled_override_changes_status_and_evidence(self):
         fields = infer_document_fields(
             "1.6_R6/validation/reports/r6.md",

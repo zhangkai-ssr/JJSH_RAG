@@ -45,6 +45,7 @@ class EvaluatorTest(unittest.TestCase):
                 required_sources=("hardware/COMPATIBILITY.md",),
                 forbidden_versions=("1.2", "1.6"),
                 required_boundary="真机验证",
+                required_answer_terms=("真机",),
                 should_refuse=False,
             ),
             EvaluationCase(
@@ -80,6 +81,44 @@ class EvaluatorTest(unittest.TestCase):
         path.write_text("\n".join((json.dumps(row), json.dumps(row))), encoding="utf-8")
         with self.assertRaises(ValueError):
             load_cases(path)
+
+    def test_loader_reads_required_answer_terms(self):
+        path = self.root / "boundary.jsonl"
+        path.write_text(
+            json.dumps(
+                {
+                    "id": "boundary",
+                    "question": "BOM 边界？",
+                    "hardware_version": "1.6_R6",
+                    "required_sources": [],
+                    "forbidden_versions": [],
+                    "required_boundary": "BOM 不等于实物装配",
+                    "required_answer_terms": ["BOM", "实物装配"],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        case = load_cases(path)[0]
+
+        self.assertEqual(("BOM", "实物装配"), case.required_answer_terms)
+
+    def test_missing_required_answer_term_fails_boundary_gate(self):
+        case = EvaluationCase(
+            id="missing-boundary",
+            question="ADS1298 DOUT",
+            hardware_version="1.6_R6",
+            required_sources=("hardware/COMPATIBILITY.md",),
+            forbidden_versions=("1.2", "1.6"),
+            required_boundary="必须出现格式边界",
+            required_answer_terms=("不会自然出现的边界词",),
+        )
+
+        report = evaluate_cases(Retriever(self.store), Answerer(), [case])
+
+        self.assertEqual(0.0, report.boundary_accuracy)
+        self.assertFalse(report.passed)
 
 
 if __name__ == "__main__":

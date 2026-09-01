@@ -27,6 +27,19 @@ def result(content: str, evidence: EvidenceLevel, start: int = 10, end: int = 12
     )
 
 
+def structured_result(document_type: str, content: str) -> RetrievedChunk:
+    """构造指定结构化格式的检索结果。"""
+    return RetrievedChunk(
+        **{
+            **result(content, EvidenceLevel.SOURCE_REVIEWED).__dict__,
+            "document_type": document_type,
+            "start_line": 0,
+            "end_line": 0,
+            "source_locator": "page 1" if document_type == "pdf" else "BOM!A2:K2",
+        }
+    )
+
+
 class AnswererTest(unittest.TestCase):
     """验证回答不会缺引用或擅自提升证据。"""
 
@@ -65,6 +78,95 @@ class AnswererTest(unittest.TestCase):
         self.assertEqual("1.6_R6/docs/status.md", citation.relative_path)
         self.assertEqual((23, 27), (citation.start_line, citation.end_line))
         self.assertEqual("a" * 40, citation.git_commit)
+
+    def test_citation_keeps_structured_source_locator(self):
+        structured = RetrievedChunk(
+            **{
+                **result("Designator: U8\nManufacturer Part: LIS2MDL", EvidenceLevel.SOURCE_REVIEWED).__dict__,
+                "relative_path": "1.6_R6/hardware/mainboard-bottom/source/BOM_board.xlsx",
+                "heading_or_symbol": "BOM U8",
+                "start_line": 0,
+                "end_line": 0,
+                "source_locator": "BOM!A2:K2",
+            }
+        )
+
+        answer = Answerer().answer("LIS2MDL U8", "1.6_R6", [structured])
+
+        self.assertEqual("BOM!A2:K2", answer.citations[0].source_locator)
+
+    def test_bom_answer_states_assembly_boundary(self):
+        answer = Answerer().answer(
+            "U10 的料号是什么？",
+            "1.6_R6",
+            [structured_result("bom_xlsx", "Designator: U10\nLCSC Part: C919695")],
+        )
+
+        self.assertTrue(any("BOM" in item and "实物装配" in item for item in answer.unvalidated))
+
+    def test_netlist_answer_states_physical_continuity_boundary(self):
+        answer = Answerer().answer(
+            "LIS2_DRDY 连接什么？",
+            "1.6_R6",
+            [structured_result("protel_netlist", "'LIS2_DRDY' ; CN1.11 CN2.11")],
+        )
+
+        self.assertTrue(any("网表" in item and "实板导通" in item for item in answer.unvalidated))
+
+    def test_pdf_answer_states_text_and_graphics_boundary(self):
+        answer = Answerer().answer(
+            "PDF 中的板厚是什么？",
+            "1.6_R6",
+            [structured_result("pdf", "Board Thickness 1.2mm")],
+        )
+
+        self.assertTrue(
+            any(
+                "PDF" in item and "图形连通性" in item and "生产授权" in item
+                for item in answer.unvalidated
+            )
+        )
+
+    def test_structured_sources_do_not_use_private_llm(self):
+        cases = (
+            ("bom_xlsx", "U10 已经焊接到实板，可以认定整机装配验收完成。"),
+            ("bom_xlsx", "实物装配已经完成。"),
+            ("protel_netlist", "CN1 与 CN2 已完成实板通断确认。"),
+            ("pdf", "该 PDF 可以直接用于生产投产。"),
+        )
+        for document_type, unsafe_claim in cases:
+            with self.subTest(document_type=document_type):
+                class UnsafeLlm:
+                    def __init__(self):
+                        self.calls = 0
+
+                    def complete(self, prompt: str) -> str:
+                        self.calls += 1
+                        return unsafe_claim
+
+                llm = UnsafeLlm()
+                answer = Answerer(llm).answer(
+                    "这个导出能证明验收吗？",
+                    "1.6_R6",
+                    [structured_result(document_type, "受控导出内容")],
+                )
+
+                self.assertEqual(0, llm.calls)
+                self.assertIn("受控导出内容", answer.conclusion)
+                self.assertNotIn(unsafe_claim, answer.conclusion)
+
+    def test_private_llm_remains_available_for_text_sources(self):
+        class TextLlm:
+            def complete(self, prompt: str) -> str:
+                return "私有模型摘要"
+
+        answer = Answerer(TextLlm()).answer(
+            "当前状态？",
+            "1.6_R6",
+            [result("源码已检查。", EvidenceLevel.SOURCE_REVIEWED)],
+        )
+
+        self.assertEqual("私有模型摘要", answer.conclusion)
 
     def test_other_version_result_is_rejected(self):
         foreign = result("其他版本", EvidenceLevel.SOURCE_REVIEWED)

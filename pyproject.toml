@@ -7,7 +7,7 @@ name = "jssh-rag"
 version = "0.1.0"
 description = "JSSH V1.6 R6 evidence-aware local RAG"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["pypdf>=6,<7"]
 
 [project.scripts]
 jssh-rag = "jssh_rag.cli:main"

@@ -147,5 +147,9 @@ class Retriever:
                     raise RuntimeError("检索器检测到跨版本污染")
                 chunks[item.chunk_id] = item
                 scores[item.chunk_id] = scores.get(item.chunk_id, 0.0) + weight / rank
-        ordered = sorted(chunks.values(), key=lambda item: scores[item.chunk_id], reverse=True)
+        ordered = sorted(
+            chunks.values(),
+            key=lambda item: (scores[item.chunk_id], item.priority),
+            reverse=True,
+        )
         return [replace(item, score=scores[item.chunk_id]) for item in ordered[:limit]]
