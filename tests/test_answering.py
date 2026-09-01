@@ -120,6 +120,13 @@ class AnswererTest(unittest.TestCase):
             [structured_result("pdf", "Board Thickness 1.2mm")],
         )
 
+        self.assertTrue(
+            any(
+                "PDF" in item and "图形连通性" in item and "生产授权" in item
+                for item in answer.unvalidated
+            )
+        )
+
     def test_private_llm_structured_overclaim_is_blocked(self):
         cases = (
             ("bom_xlsx", "BOM 证明已完成实物装配。", "BOM 只证明受控源文件中的物料记录"),
@@ -146,13 +153,6 @@ class AnswererTest(unittest.TestCase):
                 self.assertIn(prompt_boundary, llm.prompt)
                 self.assertIn("超出结构化来源证据边界", answer.conclusion)
                 self.assertNotEqual(unsafe_claim, answer.conclusion)
-
-        self.assertTrue(
-            any(
-                "PDF" in item and "图形连通性" in item and "生产授权" in item
-                for item in answer.unvalidated
-            )
-        )
 
     def test_other_version_result_is_rejected(self):
         foreign = result("其他版本", EvidenceLevel.SOURCE_REVIEWED)
