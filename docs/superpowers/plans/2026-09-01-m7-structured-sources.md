@@ -172,8 +172,8 @@ Expected: FAIL because `jssh_rag.structured` does not exist。
 - [ ] **Step 3: Implement the smallest deterministic parsers**
 
 ```python
-def parse_pdf(document: DocumentMeta, raw: bytes) -> list[Chunk]:
-    reader = PdfReader(BytesIO(raw), strict=True)
+def parse_pdf(document: DocumentMeta, raw: bytes, warnings: list[str] | None = None) -> list[Chunk]:
+    reader = PdfReader(BytesIO(raw), strict=False)
     return [
         Chunk.create_located(document, f"page {number}", f"page {number}", text)
         for number, page in enumerate(reader.pages, 1)
@@ -181,7 +181,7 @@ def parse_pdf(document: DocumentMeta, raw: bytes) -> list[Chunk]:
     ]
 ```
 
-XLSX 只读取 workbook relationship、shared strings 和 worksheet cell，不计算公式；BOM 每个非空数据行生成一个 chunk。网表按 `$PACKAGES`、`$NETS` 和续行边界生成可定位 chunk。
+XLSX 只读取 workbook relationship、shared strings 和 worksheet cell，不计算公式；BOM 每个非空数据行生成一个 chunk。网表按 `$PACKAGES`、`$NETS` 和续行边界生成可定位 chunk。PDF 宽松恢复产生的 parser warning 必须写入索引报告，不得用 `0 errors` 隐去来源损坏。
 
 - [ ] **Step 4: Dispatch binary/text reads from the repository indexer**
 
@@ -234,7 +234,7 @@ Expected: locator fixture test initially fails, then passes after fixture uses `
 
 Run: `jssh-rag index --version 1.6_R6`
 
-Expected: 0 errors，文档数包含 4 BOM、4 网表和 9 PDF。
+Expected: 0 errors，文档数包含 4 BOM、4 网表和 9 PDF；宽松恢复的 PDF 诊断进入 `warnings`。
 
 - [ ] **Step 3: Update stable commands, evidence rules and work record**
 
@@ -288,7 +288,7 @@ Expected: exit code 0。
 
 Run: `jssh-rag index --version 1.6_R6`
 
-Expected: 0 errors and source commit `f89e2f847998ee3992c432ccfd2b6df8aa4eca63` unless the read-only source has legitimately advanced and remains clean。
+Expected: 0 errors and source commit `f89e2f847998ee3992c432ccfd2b6df8aa4eca63` unless the read-only source has legitimately advanced and remains clean；任何 PDF 容错恢复均以 `warnings` 报告。
 
 Run: `jssh-rag evaluate --version 1.6_R6`
 

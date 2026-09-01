@@ -57,6 +57,17 @@ class IndexerTest(unittest.TestCase):
         second = parse_document(meta, text)
         self.assertEqual([item.chunk_id for item in first], [item.chunk_id for item in second])
 
+    def test_text_chunk_id_keeps_pre_m7_identity(self):
+        text = "ADS1298"
+        meta = sample_meta("1.6_R6/docs/stable.md", text)
+        chunk = parse_document(meta, text)[0]
+        old_identity = "\0".join((meta.document_id, "文档说明", "1", "1", text))
+
+        self.assertEqual(
+            hashlib.sha256(old_identity.encode("utf-8")).hexdigest(),
+            chunk.chunk_id,
+        )
+
     def test_invalid_utf8_is_reportable_not_silently_ignored(self):
         with self.assertRaises(UnicodeDecodeError):
             b"\xff".decode("utf-8")
@@ -93,6 +104,7 @@ class RepositoryIndexTest(unittest.TestCase):
         report = index_repository(self.policy, self.store, overrides={})
         self.assertEqual(1, report.document_count)
         self.assertEqual([], report.errors)
+        self.assertEqual([], report.warnings)
         self.assertEqual([], self.store.search("秘密草稿", "1.6_R6"))
         self.assertEqual(1, len(self.store.search("ADS1298", "1.6_R6")))
         self.assertEqual(40, len(report.git_commit))

@@ -117,7 +117,6 @@ class Chunk:
                 heading_or_symbol,
                 str(start_line),
                 str(end_line),
-                "",
                 content,
             )
         )

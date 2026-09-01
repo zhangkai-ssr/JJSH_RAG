@@ -199,6 +199,15 @@ class Answerer:
             unvalidated.append(f"未找到 {hardware_version} 真机验收证据。")
         if not current:
             unvalidated.append("仅检索到非 current 来源，不能作为当前实现结论。")
+        document_types = {item.document_type for item in retrieved}
+        if "bom_xlsx" in document_types:
+            unvalidated.append("BOM 只证明受控源文件中的物料记录，不等于实物装配或真机验收。")
+        if "protel_netlist" in document_types:
+            unvalidated.append("网表只证明受控导出的连接记录，不等于原理图图形或实板导通验收。")
+        if "pdf" in document_types:
+            unvalidated.append(
+                "PDF 文字提取只证明页面中的可检索内容，不等于图形连通性验证、生产授权或真机验收。"
+            )
         summary = "；".join(summaries) if summaries else (
             ranked_all[0] if ranked_all else retrieved[0].heading_or_symbol
         )

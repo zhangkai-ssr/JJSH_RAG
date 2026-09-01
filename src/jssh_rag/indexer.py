@@ -28,6 +28,7 @@ class IndexReport:
     chunk_count: int
     removed_document_count: int
     errors: list[str]
+    warnings: list[str]
 
 
 @dataclass(frozen=True)
@@ -88,8 +89,12 @@ class SourcePolicy:
             return False
         if path.suffix.lower() not in self.include_extensions:
             return False
-        patterns = self.path_patterns.get(path.suffix.lower())
-        if patterns and not any(path.match(pattern) for pattern in patterns):
+        suffix = path.suffix.lower()
+        patterns = self.path_patterns.get(suffix)
+        if suffix in {".xlsx", ".tel", ".pdf"}:
+            if not patterns or not any(path.match(pattern) for pattern in patterns):
+                return False
+        elif patterns and not any(path.match(pattern) for pattern in patterns):
             return False
         lowered = normalized.casefold()
         if any(
@@ -302,6 +307,7 @@ def index_repository(
     document_count = 0
     chunk_count = 0
     errors: list[str] = []
+    warnings: list[str] = []
     for relative_path in accepted:
         try:
             raw = (repository / Path(relative_path)).read_bytes()
@@ -321,7 +327,9 @@ def index_repository(
             if fields.document_type == "bom_xlsx":
                 chunks = parse_xlsx_bom(document, raw)
             elif fields.document_type == "pdf":
-                chunks = parse_pdf(document, raw)
+                pdf_warnings: list[str] = []
+                chunks = parse_pdf(document, raw, pdf_warnings)
+                warnings.extend(f"{relative_path}: {item}" for item in pdf_warnings)
             else:
                 chunks = parse_document(document, raw.decode("utf-8-sig"))
             store.replace_document(document, chunks)
@@ -339,4 +347,5 @@ def index_repository(
         chunk_count=chunk_count,
         removed_document_count=removed,
         errors=errors,
+        warnings=warnings,
     )

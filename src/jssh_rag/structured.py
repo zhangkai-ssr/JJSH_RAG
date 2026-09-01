@@ -1,6 +1,7 @@
 """从受控 XLSX BOM 和 PDF 中提取可审计的格式原生知识块。"""
 
 from io import BytesIO
+import logging
 from pathlib import PurePosixPath
 import re
 from xml.etree import ElementTree
@@ -158,12 +159,17 @@ def parse_xlsx_bom(document: DocumentMeta, raw: bytes) -> list[Chunk]:
         raise ValueError(f"BOM 工作簿无法可靠解析: {exc}") from exc
 
 
-def parse_pdf(document: DocumentMeta, raw: bytes) -> list[Chunk]:
+def parse_pdf(
+    document: DocumentMeta,
+    raw: bytes,
+    warnings: list[str] | None = None,
+) -> list[Chunk]:
     """按页提取 PDF 文本并保留页码，不推断图形连通性。
 
     Args:
         document: 已完成 Git 身份和文档类型校验的 PDF 元数据。
         raw: 原始 PDF bytes。
+        warnings: 可选的解析器容错诊断接收列表。
 
     Returns:
         每个包含可提取文字的 PDF 页对应一个知识块。
@@ -171,6 +177,19 @@ def parse_pdf(document: DocumentMeta, raw: bytes) -> list[Chunk]:
     Raises:
         ValueError: PDF 无法解析或没有任何可提取文字。
     """
+    logger = logging.getLogger("pypdf")
+    messages: list[str] = []
+
+    class _WarningHandler(logging.Handler):
+        """收集 pypdf 宽松解析产生的审计诊断。"""
+
+        def emit(self, record: logging.LogRecord) -> None:
+            messages.append(record.getMessage())
+
+    handler = _WarningHandler(level=logging.WARNING)
+    previous_propagate = logger.propagate
+    logger.addHandler(handler)
+    logger.propagate = False
     try:
         reader = PdfReader(BytesIO(raw), strict=False)
         chunks = []
@@ -192,3 +211,8 @@ def parse_pdf(document: DocumentMeta, raw: bytes) -> list[Chunk]:
         if isinstance(exc, ValueError):
             raise
         raise ValueError(f"PDF 无法可靠解析: {exc}") from exc
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = previous_propagate
+        if warnings is not None:
+            warnings.extend(dict.fromkeys(message for message in messages if message.strip()))

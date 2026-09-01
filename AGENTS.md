@@ -178,7 +178,7 @@ flowchart TD
 | --- | --- |
 | 来源策略、元数据 | `tests.test_source_policy`、`tests.test_metadata`，并确认源版本没有已跟踪修改 |
 | 解析、存储、重建 | `tests.test_indexer`、`tests.test_store`，实际执行一次 `index` |
-| BOM、网表、PDF | `tests.test_structured`、`tests.test_source_policy`、`tests.test_store`，并检查工作表/单元格、行号、页码和实际结构化查询 |
+| BOM、网表、PDF | `tests.test_structured`、`tests.test_source_policy`、`tests.test_store`，并检查工作表/单元格、行号、页码、PDF 恢复 warning 和实际结构化查询 |
 | 检索、Embedding | `tests.test_retriever` 和完整黄金评估；关键版本污染必须为 0 |
 | 回答、证据边界 | `tests.test_answering` 和完整黄金评估；引用、拒答、冲突与证据等级均须检查 |
 | CLI | `tests.test_cli`，并对 `index/search/ask/evaluate` 做受影响命令冒烟测试 |

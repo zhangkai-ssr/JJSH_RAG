@@ -1,6 +1,7 @@
 """验证 SQLite 文档、知识块和全文索引。"""
 
 import hashlib
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -66,6 +67,88 @@ class KnowledgeStoreTest(unittest.TestCase):
 
         self.assertEqual("BOM!A2:K2", result.source_locator)
         self.assertEqual((0, 0), (result.start_line, result.end_line))
+
+    def test_m6_database_migrates_without_losing_text_or_embedding_cache(self):
+        path = Path(self.store.connection.execute("PRAGMA database_list").fetchone()[2]).with_name(
+            "m6.sqlite3"
+        )
+        document, chunk = make_document(
+            "1.6_R6", "1.6_R6/hardware/legacy.md", "ADS1298 旧库兼容"
+        )
+        connection = sqlite3.connect(path)
+        connection.executescript(
+            """
+            CREATE TABLE documents (
+                document_id TEXT PRIMARY KEY, product TEXT NOT NULL,
+                hardware_version TEXT NOT NULL, relative_path TEXT NOT NULL,
+                git_commit TEXT NOT NULL, source_sha256 TEXT NOT NULL,
+                document_type TEXT NOT NULL, module TEXT NOT NULL,
+                status TEXT NOT NULL, evidence_level TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(hardware_version, relative_path)
+            );
+            CREATE TABLE chunks (
+                chunk_id TEXT PRIMARY KEY, document_id TEXT NOT NULL,
+                heading_or_symbol TEXT NOT NULL, start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL, content TEXT NOT NULL
+            );
+            CREATE VIRTUAL TABLE chunks_fts USING fts5(
+                chunk_id UNINDEXED, content, tokenize = 'unicode61'
+            );
+            CREATE TABLE index_metadata (
+                hardware_version TEXT PRIMARY KEY, source_repository TEXT NOT NULL,
+                git_commit TEXT NOT NULL, indexed_at TEXT NOT NULL
+            );
+            CREATE TABLE embeddings (cache_key TEXT PRIMARY KEY, vector_json TEXT NOT NULL);
+            """
+        )
+        connection.execute(
+            "INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                document.document_id,
+                document.product,
+                document.hardware_version,
+                document.relative_path,
+                document.git_commit,
+                document.source_sha256,
+                document.document_type,
+                document.module,
+                document.status,
+                document.evidence_level.value,
+                document.priority,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                chunk.chunk_id,
+                chunk.document_id,
+                chunk.heading_or_symbol,
+                chunk.start_line,
+                chunk.end_line,
+                chunk.content,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO chunks_fts(chunk_id, content) VALUES (?, ?)",
+            (chunk.chunk_id, chunk.content),
+        )
+        connection.execute("INSERT INTO embeddings VALUES ('stable-key', '[1.0]')")
+        connection.commit()
+        connection.close()
+
+        migrated = KnowledgeStore(path)
+        self.addCleanup(migrated.close)
+        found = migrated.search("ADS1298", "1.6_R6")[0]
+
+        self.assertEqual(chunk.chunk_id, found.chunk_id)
+        self.assertEqual("", found.source_locator)
+        self.assertEqual(
+            "[1.0]",
+            migrated.connection.execute(
+                "SELECT vector_json FROM embeddings WHERE cache_key = 'stable-key'"
+            ).fetchone()[0],
+        )
 
     def test_version_filter_never_returns_other_version(self):
         r6_document, r6_chunk = make_document("1.6_R6", "1.6_R6/r6.md", "ADS1298 R6")

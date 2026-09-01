@@ -78,6 +78,31 @@ class SourcePolicyTest(unittest.TestCase):
                 "1.6_R6/hardware/mainboard-top/manufacturing/PickAndPlace_board.xlsx"
             )
         )
+        self.assertFalse(
+            self.policy.accepts("1.6_R6/hardware/mainboard-top/source/not_BOM_board.xlsx")
+        )
+        self.assertFalse(
+            self.policy.accepts("1.6_R6/hardware/mainboard-top/source/archive/BOM_board.xlsx")
+        )
+        self.assertFalse(
+            self.policy.accepts("1.6_R6/hardware/mainboard-top/source/Netlist_board.tel")
+        )
+
+    def test_structured_extension_without_nonempty_patterns_is_rejected(self):
+        for path_patterns in ({}, {".pdf": ()}):
+            policy = SourcePolicy(
+                product=self.policy.product,
+                hardware_version=self.policy.hardware_version,
+                source_repository=self.policy.source_repository,
+                source_prefix=self.policy.source_prefix,
+                include_extensions=self.policy.include_extensions,
+                exclude_segments=self.policy.exclude_segments,
+                tracked_files_only=self.policy.tracked_files_only,
+                path_patterns=path_patterns,
+            )
+            self.assertFalse(
+                policy.accepts("1.6_R6/hardware/mainboard-top/schematic/SCH_board.pdf")
+            )
 
     def test_untracked_file_is_rejected_when_tracking_set_is_supplied(self):
         tracked = {"1.6_R6/hardware/COMPATIBILITY.md"}

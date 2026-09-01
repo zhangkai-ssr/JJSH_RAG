@@ -148,6 +148,7 @@ class Retriever:
                 chunks[item.chunk_id] = item
                 scores[item.chunk_id] = scores.get(item.chunk_id, 0.0) + weight / rank
         for chunk_id, item in chunks.items():
-            scores[chunk_id] += item.priority / 500.0
+            # 只允许受控优先级在相邻相关性结果间生效；上限 0.1 不足以让第 4 名越过第 3 名。
+            scores[chunk_id] += min(item.priority, 100) / 1000.0
         ordered = sorted(chunks.values(), key=lambda item: scores[item.chunk_id], reverse=True)
         return [replace(item, score=scores[item.chunk_id]) for item in ordered[:limit]]

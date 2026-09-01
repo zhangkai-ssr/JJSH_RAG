@@ -2,6 +2,7 @@
 
 from io import BytesIO
 import hashlib
+import re
 import unittest
 from zipfile import ZipFile
 
@@ -116,6 +117,29 @@ $END
         self.assertEqual(1, len(chunks))
         self.assertEqual("page 1", chunks[0].source_locator)
         self.assertIn("R67 GPIO48", chunks[0].content)
+
+    def test_recovered_pdf_warning_is_returned_for_audit(self):
+        raw = minimal_pdf_bytes("R67 GPIO48")
+        damaged = re.sub(rb"startxref\s+\d+", b"startxref\n1", raw)
+        warnings: list[str] = []
+
+        chunks = parse_pdf(meta("pdf"), damaged, warnings)
+
+        self.assertEqual(1, len(chunks))
+        self.assertTrue(warnings)
+
+    def test_pdf_without_extractable_text_is_rejected(self):
+        writer = PdfWriter()
+        writer.add_blank_page(width=612, height=792)
+        output = BytesIO()
+        writer.write(output)
+
+        with self.assertRaisesRegex(ValueError, "没有可提取文字"):
+            parse_pdf(meta("pdf"), output.getvalue())
+
+    def test_invalid_pdf_is_reported_as_parse_error(self):
+        with self.assertRaisesRegex(ValueError, "无法可靠解析"):
+            parse_pdf(meta("pdf"), b"not a pdf")
 
 
 if __name__ == "__main__":

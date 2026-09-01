@@ -232,6 +232,46 @@ class RetrieverTest(unittest.TestCase):
 
         self.assertEqual(relevant.chunk_id, results[0].chunk_id)
 
+    def test_fusion_priority_cannot_move_fourth_above_third(self):
+        class OrderedStore:
+            def search(self, query, hardware_version, limit):
+                items = []
+                for index, priority in enumerate((0, 0, 0, 100), 1):
+                    chunk = add_result(index, priority)
+                    items.append(chunk)
+                return items
+
+        def add_result(index: int, priority: int):
+            base = result_chunk(index)
+            return type(base)(**{**base.__dict__, "priority": priority})
+
+        def result_chunk(index: int):
+            from jssh_rag.models import RetrievedChunk
+
+            return RetrievedChunk(
+                chunk_id=str(index) * 64,
+                document_id=str(index) * 64,
+                hardware_version="1.6_R6",
+                relative_path=f"1.6_R6/docs/{index}.md",
+                git_commit="a" * 40,
+                source_sha256="b" * 64,
+                document_type="markdown",
+                module="docs",
+                status="current",
+                evidence_level=EvidenceLevel.SOURCE_REVIEWED,
+                heading_or_symbol="测试",
+                start_line=1,
+                end_line=1,
+                content="R67 DRDY_B",
+                score=1.0,
+                priority=0,
+            )
+
+        results = Retriever(OrderedStore()).search("R67 DRDY_B", "1.6_R6", limit=4)
+
+        self.assertEqual("3" * 64, results[2].chunk_id)
+        self.assertEqual("4" * 64, results[3].chunk_id)
+
     def test_highly_relevant_draft_is_preserved_with_current_source(self):
         for index in range(3):
             add_document(

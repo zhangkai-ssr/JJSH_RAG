@@ -27,6 +27,19 @@ def result(content: str, evidence: EvidenceLevel, start: int = 10, end: int = 12
     )
 
 
+def structured_result(document_type: str, content: str) -> RetrievedChunk:
+    """构造指定结构化格式的检索结果。"""
+    return RetrievedChunk(
+        **{
+            **result(content, EvidenceLevel.SOURCE_REVIEWED).__dict__,
+            "document_type": document_type,
+            "start_line": 0,
+            "end_line": 0,
+            "source_locator": "page 1" if document_type == "pdf" else "BOM!A2:K2",
+        }
+    )
+
+
 class AnswererTest(unittest.TestCase):
     """验证回答不会缺引用或擅自提升证据。"""
 
@@ -81,6 +94,38 @@ class AnswererTest(unittest.TestCase):
         answer = Answerer().answer("LIS2MDL U8", "1.6_R6", [structured])
 
         self.assertEqual("BOM!A2:K2", answer.citations[0].source_locator)
+
+    def test_bom_answer_states_assembly_boundary(self):
+        answer = Answerer().answer(
+            "U10 的料号是什么？",
+            "1.6_R6",
+            [structured_result("bom_xlsx", "Designator: U10\nLCSC Part: C919695")],
+        )
+
+        self.assertTrue(any("BOM" in item and "实物装配" in item for item in answer.unvalidated))
+
+    def test_netlist_answer_states_physical_continuity_boundary(self):
+        answer = Answerer().answer(
+            "LIS2_DRDY 连接什么？",
+            "1.6_R6",
+            [structured_result("protel_netlist", "'LIS2_DRDY' ; CN1.11 CN2.11")],
+        )
+
+        self.assertTrue(any("网表" in item and "实板导通" in item for item in answer.unvalidated))
+
+    def test_pdf_answer_states_text_and_graphics_boundary(self):
+        answer = Answerer().answer(
+            "PDF 中的板厚是什么？",
+            "1.6_R6",
+            [structured_result("pdf", "Board Thickness 1.2mm")],
+        )
+
+        self.assertTrue(
+            any(
+                "PDF" in item and "图形连通性" in item and "生产授权" in item
+                for item in answer.unvalidated
+            )
+        )
 
     def test_other_version_result_is_rejected(self):
         foreign = result("其他版本", EvidenceLevel.SOURCE_REVIEWED)
