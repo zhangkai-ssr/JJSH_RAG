@@ -56,7 +56,8 @@
 4. 新增 Python 模块时在文件开头说明职责；公开类和函数使用中文 docstring，并按需写 `Args:`、
    `Returns:`、`Raises:`。
 5. 不复制源仓库中易变的引脚、端口、协议字段或真机结论；回答通过引用返回这些事实。
-6. Git 提交信息中文优先；不要提交生成数据库、缓存、日志或个人环境配置。
+6. Git 提交 subject 优先使用准确、可检索的中文；命令、路径、协议名和代码标识符按原文保留。
+   不要提交生成数据库、缓存、日志或个人环境配置。
 
 ## 需求对齐与工作记录
 
@@ -75,18 +76,78 @@
 
 ## Worktree 与 PR 流程
 
-1. `main` 是持久基线。代码和重要规则变更使用 `feature/<task>`，临时 worktree 放在
-   `.WORKTREE/<purpose>/`；已在 worktree 中不得嵌套创建。
-2. 开始前检查 `git status`、`git worktree list`、目标远程和 `origin/main`；保护现有脏改动。
-3. 实施中按测试先行完成源码行为；纯文档调整至少检查链接、命令、`git diff --check` 和相关测试。
-4. PR 前检查 freshness、完整 diff 和验证证据。环境支持独立 reviewer 时执行独立 review；不支持时
-   如实记录限制，不得伪称已完成独立评审。
-5. 推送、创建 PR 和合并前分别取得用户授权，并再次核对精确远程与目标分支。
-6. PR 创建后必须保留 worktree；临时 worktree 仅用于隔离开发，不得在任务完成后长期保留。
-7. PR 合并后必须在 `main` 上完成受影响验证并更新 `plan.md`，然后从主工作区核对并删除本次创建的
-   `.WORKTREE/<purpose>/`，执行 `git worktree prune`，再删除对应的本地和远程 feature 分支。满足这些
-   收尾条件后直接清理，不再把“是否保留临时 worktree”作为额外选项；目标不明确或存在未提交内容时停止并确认。
-8. 禁止用本地合并绕过用户选择和 PR 状态，也禁止强推覆盖远程历史。
+代码和重要规则变更必须走本流程；纯阅读、状态报告和不改变规则的小型文字修订可在干净的
+`main` 直接完成。`main` 是持久基线，临时 worktree 只用于隔离开发，代码 worktree 一律通过
+PR 合入，不允许本地 `checkout main && merge`。
+
+```mermaid
+flowchart TD
+    A["0. main 预检；同步 origin/main，确认 0 0 且无树差异"] --> B["1. 从 origin/main 创建 feature/<task> worktree"]
+    B --> C["2. 安装/基线验证，实施并自检"]
+    C --> D["3. PR 前 freshness；必要时 rebase 并重验"]
+    D --> E["4. 独立 review；报告 diff 与证据"]
+    E --> F["5. 分别取得推送、建 PR 授权"]
+    F --> G["6. PR 后由新 reviewer 从 main 视角复核"]
+    G --> H["7. 取得合并授权并合并"]
+    H --> I["8. 同步本地/远端 main，主线复验并更新 plan.md"]
+    I --> J["9. 精确删除 worktree、prune 和 feature 分支"]
+    J --> K["10. 终检 main 同步及路径、注册、分支均符合预期"]
+```
+
+1. **主工作区预检与同步。**先用 `git worktree list --porcelain` 定位持有 `main` 的主工作区，并在那里执行
+   `git status --short --branch`、`git remote -v` 和 `git fetch origin main --prune`，确认目标仓库与精确远程。
+   创建 worktree 前，主工作区必须干净且本地 `main` 只能用 `git merge --ff-only origin/main` 同步；随后
+   `git rev-list --left-right --count main...origin/main` 必须为 `0 0`，且
+   `git diff --exit-code main..origin/main` 必须退出码为 0。主工作区有改动、主线分叉、无法 fast-forward
+   或两项同步检查不通过时停止并报告，不得先创建 worktree 或用 rebase/强推改写 `main`。记录并保护已有
+   脏改动、未跟踪文件、其他 worktree 和运行中进程；不清理、不暂存、不移动不属于本任务的内容。
+   已在 linked worktree 中时不得嵌套创建。
+2. **创建或恢复 worktree。**新任务从刚获取的 `origin/main` 创建
+   `.WORKTREE/<purpose>/` 和 `feature/<task>`，创建前用
+   `git check-ignore .WORKTREE/<purpose>` 确认目标路径受忽略，并确认精确路径和分支均未占用。
+   恢复尚未发布的既有 feature worktree 时，须先确认工作区干净，
+   再执行 `git fetch origin main --prune` 和 `git rebase origin/main`；存在未提交内容、冲突或基线不明时
+   停止并报告，不使用自动 stash 掩盖状态。新建 worktree 已直接基于最新 `origin/main` 时无需再做一次空 rebase。
+3. **环境与基线。**在新 worktree 按 README 完成本地安装或环境准备，并在修改前运行受影响的基线测试。
+   基线失败必须先区分环境问题与既有代码问题并如实报告；未解释前不得归因于本次改动，也不得继续扩大改动。
+4. **实施与自检。**按测试先行完成源码行为，将同一行为涉及的源码、测试、README 和必要工作记录放在
+   同一原子步骤；只显式暂存本次文件。每个新提交的 subject 优先使用中文，英文命令、路径和代码标识符
+   按原文保留。纯文档调整至少检查 Markdown 相对链接、命令入口、完整测试和 `git diff --check`。
+   本地数据库、模型、缓存、日志和索引输出不得进入提交。
+5. **PR 前 freshness。**交付前再次执行 `git fetch origin main --prune`，用
+   `git rev-list --left-right --count origin/main...HEAD` 检查落后/领先提交数。尚未发布的分支如落后，
+   执行 `git rebase origin/main`，然后重新运行全部受影响验证并重新检查完整 diff；
+   发生冲突、无法重放或验证失败时停止并报告。rebase 冲突修复、review 修复和后续功能调整属于不同原子
+   步骤时分别提交，不把未解释失败带入下一步。
+6. **独立 review 与授权。**环境支持独立 reviewer 时，PR 前必须让 reviewer 只审完整 diff、项目规则和
+   验证证据，不直接修改工作区；问题修复后重新执行 freshness、受影响验证和 review，最多三轮，第三轮仍
+   未通过则停止并报告。不支持独立 reviewer 时明确记录限制，不得伪称已评审。review 通过后报告范围、
+   diff、验证和目标远程；推送、创建 PR、合并前分别取得用户授权，并在每一步重新核对精确远程与目标分支。
+7. **PR 后复核。**PR 创建后保留原 worktree，并从 `main` 主工作区启动一名新的独立 reviewer，检查 PR
+   完整 diff、项目规则、CI、冲突、freshness 和验证证据；未通过时回原 worktree 修复，并从 PR 前 freshness
+   重新走起，PR 前后合计最多三轮修复复核。分支一旦已推送或已创建 PR，不得用 rebase 改写已发布历史；
+   需要吸收推进后的 `origin/main` 时，在 feature 分支创建可追溯的合并提交并重验，或停止请求用户选择。
+   禁止强推覆盖远程历史。
+8. **合并后主线同步与复验。**只有取得合并授权且 PR、CI、review、freshness 均通过后才可合并。随后先
+   确认 PR 的实际 merge commit 已进入 `origin/main`，再回到干净的 `main` 主工作区执行
+   `git fetch origin main --prune` 和 `git merge --ff-only origin/main`。同步后必须再次确认
+   `git rev-list --left-right --count main...origin/main` 为 `0 0`，且
+   `git diff --exit-code main..origin/main` 退出码为 0，才可在本地 `main` 运行受影响验证。若主工作区有
+   用户改动、主线分叉、不能安全 fast-forward 或仍存在提交/树差异，不得覆盖、切换、rebase 或改写历史；
+   必须停止并报告，临时验证 worktree 不能替代本地与远端 `main` 已同步这一最终门禁。
+9. **工作记录与清理门禁。**主线复验通过后更新 [plan.md](plan.md) 中该工作的范围、验证摘要、提交/PR、
+   merge 短提交号和“已完成”状态；由此产生的提交或推送仍遵守对应授权。清理前再次确认：PR 确已合并、
+   精确目标 worktree 无未提交/未跟踪内容、忽略目录中没有需要保留的数据库或证据、没有进程占用该路径，
+   本地与远端 `main` 已通过 `0 0` 和无树差异检查，且本地/远端待删分支名称与该 PR 完全一致。
+   任一条件不满足时停止并确认。
+10. **精确清理与终检。**从主工作区依次执行 `git worktree remove <exact-path>`、
+    `git worktree prune`、`git branch -d feature/<task>`，并在已授权的精确远程上执行
+    `git push origin --delete feature/<task>` 删除同名远端分支。
+    Windows 出现目录锁时先释放引用该精确路径的编辑器、终端或进程，再重试；不得用 `--force`、递归广泛
+    删除或模糊匹配绕过门禁。最后确认目标路径不存在、`git worktree list --porcelain` 无该注册、
+    `git branch --list feature/<task>` 无本地分支、远端无同名 ref，`main...origin/main` 仍为 `0 0` 且无树
+    差异，并复查无关脏改动和文件仍原样保留。满足这些条件后直接完成既定清理，不再把“是否保留临时
+    worktree”作为额外选项。
 
 ## 验证入口
 
