@@ -120,6 +120,33 @@ class AnswererTest(unittest.TestCase):
             [structured_result("pdf", "Board Thickness 1.2mm")],
         )
 
+    def test_private_llm_structured_overclaim_is_blocked(self):
+        cases = (
+            ("bom_xlsx", "BOM 证明已完成实物装配。", "BOM 只证明受控源文件中的物料记录"),
+            ("protel_netlist", "网表证明实板导通。", "网表只证明受控导出的连接记录"),
+            ("pdf", "PDF 已获生产授权。", "PDF 文字提取只证明页面中的可检索内容"),
+        )
+        for document_type, unsafe_claim, prompt_boundary in cases:
+            with self.subTest(document_type=document_type):
+                class UnsafeLlm:
+                    def __init__(self):
+                        self.prompt = ""
+
+                    def complete(self, prompt: str) -> str:
+                        self.prompt = prompt
+                        return unsafe_claim
+
+                llm = UnsafeLlm()
+                answer = Answerer(llm).answer(
+                    "这个导出能证明验收吗？",
+                    "1.6_R6",
+                    [structured_result(document_type, "受控导出内容")],
+                )
+
+                self.assertIn(prompt_boundary, llm.prompt)
+                self.assertIn("超出结构化来源证据边界", answer.conclusion)
+                self.assertNotEqual(unsafe_claim, answer.conclusion)
+
         self.assertTrue(
             any(
                 "PDF" in item and "图形连通性" in item and "生产授权" in item

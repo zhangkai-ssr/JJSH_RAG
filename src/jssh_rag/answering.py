@@ -18,6 +18,26 @@ REAL_DEVICE_LEVELS = {
 PENDING_MARKERS = ("待验证", "未验证", "未完成", "不代表", "尚未", "待真机")
 UNSAFE_REAL_DEVICE_CLAIMS = ("真机通过", "真机验证通过", "已完成真机验收", "真机验收完成")
 REAL_DEVICE_QUERY_MARKERS = ("真机", "实板", "整机验收", "量产验收")
+FORMAT_BOUNDARIES = {
+    "bom_xlsx": "BOM 只证明受控源文件中的物料记录，不等于实物装配或真机验收。",
+    "protel_netlist": "网表只证明受控导出的连接记录，不等于原理图图形或实板导通验收。",
+    "pdf": "PDF 文字提取只证明页面中的可检索内容，不等于图形连通性验证、生产授权或真机验收。",
+}
+UNSAFE_FORMAT_PATTERNS = {
+    "bom_xlsx": (
+        r"(?:BOM|物料清单).*?(?:证明|表明|确认).*?实物装配",
+        r"已完成实物装配",
+    ),
+    "protel_netlist": (
+        r"网表.*?(?:证明|表明|确认).*?实板导通",
+        r"实板导通(?:验证|验收)?(?:通过|完成)",
+    ),
+    "pdf": (
+        r"PDF.*?(?:证明|表明|确认).*?(?:生产授权|图形连通性)",
+        r"PDF\s*已获生产授权",
+        r"图形连通性验证通过",
+    ),
+}
 
 
 class LlmProvider(Protocol):
@@ -200,14 +220,12 @@ class Answerer:
         if not current:
             unvalidated.append("仅检索到非 current 来源，不能作为当前实现结论。")
         document_types = {item.document_type for item in retrieved}
-        if "bom_xlsx" in document_types:
-            unvalidated.append("BOM 只证明受控源文件中的物料记录，不等于实物装配或真机验收。")
-        if "protel_netlist" in document_types:
-            unvalidated.append("网表只证明受控导出的连接记录，不等于原理图图形或实板导通验收。")
-        if "pdf" in document_types:
-            unvalidated.append(
-                "PDF 文字提取只证明页面中的可检索内容，不等于图形连通性验证、生产授权或真机验收。"
-            )
+        format_boundaries = [
+            boundary
+            for document_type, boundary in FORMAT_BOUNDARIES.items()
+            if document_type in document_types
+        ]
+        unvalidated.extend(format_boundaries)
         summary = "；".join(summaries) if summaries else (
             ranked_all[0] if ranked_all else retrieved[0].heading_or_symbol
         )
@@ -229,6 +247,7 @@ class Answerer:
             prompt = (
                 "只能依据下列资料回答；明确版本；不得把设计、源码、仿真、Host、QEMU、构建或烧录"
                 "表述为真机通过；冲突必须并列；无证据回答不确定。\n"
+                f"格式边界：{' '.join(format_boundaries) or '无额外格式边界'}\n"
                 f"目标版本：{hardware_version}\n问题：{query}\n资料：\n{evidence_text}"
             )
             conclusion = self.llm_provider.complete(prompt)
@@ -237,6 +256,16 @@ class Answerer:
         if not has_real_device_evidence and any(claim in conclusion for claim in UNSAFE_REAL_DEVICE_CLAIMS):
             conclusion = (
                 f"不确定：生成内容超出 {highest.value} 证据边界，不能认定真机验收通过。"
+            )
+        format_overclaim = any(
+            re.search(pattern, conclusion)
+            for document_type in document_types
+            for pattern in UNSAFE_FORMAT_PATTERNS.get(document_type, ())
+        )
+        if format_overclaim:
+            conclusion = (
+                "不确定：生成内容超出结构化来源证据边界，不能据此认定实物装配、"
+                "实板导通、图形连通性验证或生产授权。"
             )
         next_step = None
         if unvalidated:
