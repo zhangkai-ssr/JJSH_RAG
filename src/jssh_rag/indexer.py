@@ -1,6 +1,6 @@
 """只读发现 R6 正式语料并提供后续解析入口。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import ast
 import hashlib
 import json
@@ -40,6 +40,7 @@ class SourcePolicy:
     include_extensions: tuple[str, ...]
     exclude_segments: tuple[str, ...]
     tracked_files_only: bool
+    path_patterns: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
     def from_json(cls, path: Path) -> "SourcePolicy":
@@ -60,6 +61,10 @@ class SourcePolicy:
             include_extensions=tuple(item.lower() for item in data["include_extensions"]),
             exclude_segments=tuple(data["exclude_segments"]),
             tracked_files_only=bool(data["tracked_files_only"]),
+            path_patterns={
+                suffix.lower(): tuple(patterns)
+                for suffix, patterns in data.get("path_patterns", {}).items()
+            },
         )
 
     def accepts(
@@ -81,6 +86,9 @@ class SourcePolicy:
         if not normalized.startswith(f"{self.source_prefix}/"):
             return False
         if path.suffix.lower() not in self.include_extensions:
+            return False
+        patterns = self.path_patterns.get(path.suffix.lower())
+        if patterns and not any(path.match(pattern) for pattern in patterns):
             return False
         lowered = normalized.casefold()
         if any(

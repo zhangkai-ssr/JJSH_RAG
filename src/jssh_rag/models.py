@@ -201,6 +201,9 @@ def infer_document_fields(
         ".ps1": "powershell",
         ".json": "json",
         ".txt": "text",
+        ".xlsx": "bom_xlsx",
+        ".tel": "protel_netlist",
+        ".pdf": "pdf",
     }
     parts = path.parts
     top_module = parts[1] if len(parts) > 1 else "root"

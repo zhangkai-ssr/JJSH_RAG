@@ -3,7 +3,26 @@
   "hardware_version": "1.6_R6",
   "source_repository": "C:\\work1\\JSZN\\ESP32_S3",
   "source_prefix": "1.6_R6",
-  "include_extensions": [".md", ".c", ".h", ".py", ".ps1", ".json", ".txt"],
+  "include_extensions": [
+    ".md",
+    ".c",
+    ".h",
+    ".py",
+    ".ps1",
+    ".json",
+    ".txt",
+    ".xlsx",
+    ".tel",
+    ".pdf"
+  ],
+  "path_patterns": {
+    ".xlsx": ["1.6_R6/hardware/*/source/BOM_*.xlsx"],
+    ".tel": ["1.6_R6/hardware/*/schematic/Netlist_*.tel"],
+    ".pdf": [
+      "1.6_R6/hardware/*/schematic/*.pdf",
+      "1.6_R6/hardware/*/manufacturing/*.pdf"
+    ]
+  },
   "exclude_segments": [
     ".WORKTREE",
     "ARCHIVE",
