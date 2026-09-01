@@ -119,6 +119,7 @@ def evaluate_cases(
                 item.relative_path,
                 item.start_line,
                 item.end_line,
+                item.source_locator,
                 item.git_commit,
                 item.source_sha256,
             )
@@ -129,6 +130,7 @@ def evaluate_cases(
                 citation.relative_path,
                 citation.start_line,
                 citation.end_line,
+                citation.source_locator,
                 citation.git_commit,
                 citation.source_sha256,
             )

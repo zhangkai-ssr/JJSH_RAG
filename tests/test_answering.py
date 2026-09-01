@@ -66,6 +66,22 @@ class AnswererTest(unittest.TestCase):
         self.assertEqual((23, 27), (citation.start_line, citation.end_line))
         self.assertEqual("a" * 40, citation.git_commit)
 
+    def test_citation_keeps_structured_source_locator(self):
+        structured = RetrievedChunk(
+            **{
+                **result("Designator: U8\nManufacturer Part: LIS2MDL", EvidenceLevel.SOURCE_REVIEWED).__dict__,
+                "relative_path": "1.6_R6/hardware/mainboard-bottom/source/BOM_board.xlsx",
+                "heading_or_symbol": "BOM U8",
+                "start_line": 0,
+                "end_line": 0,
+                "source_locator": "BOM!A2:K2",
+            }
+        )
+
+        answer = Answerer().answer("LIS2MDL U8", "1.6_R6", [structured])
+
+        self.assertEqual("BOM!A2:K2", answer.citations[0].source_locator)
+
     def test_other_version_result_is_rejected(self):
         foreign = result("其他版本", EvidenceLevel.SOURCE_REVIEWED)
         foreign = RetrievedChunk(**{**foreign.__dict__, "hardware_version": "1.6"})

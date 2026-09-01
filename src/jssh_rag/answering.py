@@ -162,6 +162,7 @@ class Answerer:
                 end_line=item.end_line,
                 git_commit=item.git_commit,
                 source_sha256=item.source_sha256,
+                source_locator=item.source_locator,
             )
             for item in retrieved
         ]
@@ -202,7 +203,8 @@ class Answerer:
             ranked_all[0] if ranked_all else retrieved[0].heading_or_symbol
         )
         evidence_text = "\n\n".join(
-            f"[{index}] {item.relative_path}:{item.start_line}-{item.end_line}\n{item.content}"
+            f"[{index}] {item.relative_path}:"
+            f"{item.source_locator or f'{item.start_line}-{item.end_line}'}\n{item.content}"
             for index, item in enumerate(retrieved, 1)
         )
         if not current:

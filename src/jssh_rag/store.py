@@ -50,7 +50,8 @@ class KnowledgeStore:
                 heading_or_symbol TEXT NOT NULL,
                 start_line INTEGER NOT NULL,
                 end_line INTEGER NOT NULL,
-                content TEXT NOT NULL
+                content TEXT NOT NULL,
+                source_locator TEXT NOT NULL DEFAULT ''
             );
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
                 chunk_id UNINDEXED,
@@ -75,6 +76,13 @@ class KnowledgeStore:
         if "priority" not in columns:
             self.connection.execute(
                 "ALTER TABLE documents ADD COLUMN priority INTEGER NOT NULL DEFAULT 0"
+            )
+        chunk_columns = {
+            row[1] for row in self.connection.execute("PRAGMA table_info(chunks)").fetchall()
+        }
+        if "source_locator" not in chunk_columns:
+            self.connection.execute(
+                "ALTER TABLE chunks ADD COLUMN source_locator TEXT NOT NULL DEFAULT ''"
             )
         self.connection.commit()
 
@@ -137,7 +145,12 @@ class KnowledgeStore:
                 ),
             )
             self.connection.executemany(
-                "INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?)",
+                """
+                INSERT INTO chunks (
+                    chunk_id, document_id, heading_or_symbol, start_line,
+                    end_line, content, source_locator
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
                 (
                     (
                         item.chunk_id,
@@ -146,6 +159,7 @@ class KnowledgeStore:
                         item.start_line,
                         item.end_line,
                         item.content,
+                        item.source_locator,
                     )
                     for item in items
                 ),
@@ -200,6 +214,7 @@ class KnowledgeStore:
                 content=row["content"],
                 score=float(row["score"]),
                 priority=int(row["priority"]),
+                source_locator=row["source_locator"],
             )
             for row in rows
         ]

@@ -48,6 +48,25 @@ class KnowledgeStoreTest(unittest.TestCase):
                 results = self.store.search(query, "1.6_R6")
                 self.assertEqual(chunk.chunk_id, results[0].chunk_id)
 
+    def test_structured_locator_survives_store_and_search(self):
+        document, _ = make_document(
+            "1.6_R6",
+            "1.6_R6/hardware/mainboard-bottom/source/BOM_board.xlsx",
+            "Designator: U8\nManufacturer Part: LIS2MDL",
+        )
+        chunk = Chunk.create_located(
+            document,
+            "BOM U8",
+            "BOM!A2:K2",
+            "Designator: U8\nManufacturer Part: LIS2MDL",
+        )
+        self.store.replace_document(document, [chunk])
+
+        result = self.store.search("LIS2MDL U8", "1.6_R6")[0]
+
+        self.assertEqual("BOM!A2:K2", result.source_locator)
+        self.assertEqual((0, 0), (result.start_line, result.end_line))
+
     def test_version_filter_never_returns_other_version(self):
         r6_document, r6_chunk = make_document("1.6_R6", "1.6_R6/r6.md", "ADS1298 R6")
         v16_document, v16_chunk = make_document("1.6", "1.6/v16.md", "ADS1298 V1.6")
