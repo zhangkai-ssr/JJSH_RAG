@@ -10,7 +10,12 @@ from jssh_rag.models import Chunk, DocumentMeta, EvidenceLevel
 from jssh_rag.store import KnowledgeStore
 
 
-def make_document(version: str, path: str, content: str) -> tuple[DocumentMeta, Chunk]:
+def make_document(
+    version: str,
+    path: str,
+    content: str,
+    priority: int = 0,
+) -> tuple[DocumentMeta, Chunk]:
     """构造一份可追溯测试文档及知识块。"""
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     document = DocumentMeta(
@@ -23,6 +28,7 @@ def make_document(version: str, path: str, content: str) -> tuple[DocumentMeta, 
         module="hardware",
         status="current",
         evidence_level=EvidenceLevel.SOURCE_REVIEWED,
+        priority=priority,
     )
     chunk = Chunk.create(document, "测试", 1, 1, content)
     return document, chunk
@@ -188,6 +194,26 @@ class KnowledgeStoreTest(unittest.TestCase):
         self.store.replace_document(expected_document, [expected_chunk])
         results = self.store.search("R6 ADS1298 DRDY_A GPIO14", "1.6_R6")
         self.assertEqual(expected_chunk.chunk_id, results[0].chunk_id)
+
+    def test_priority_only_breaks_equal_lexical_scores(self):
+        stronger_document, stronger_chunk = make_document(
+            "1.6_R6",
+            "1.6_R6/hardware/stronger.md",
+            "R67 DRDY_B 当前连接说明。",
+        )
+        weaker_document, weaker_chunk = make_document(
+            "1.6_R6",
+            "1.6_R6/docs/weaker.md",
+            "R67 DRDY_B 当前连接说明。",
+            priority=100,
+        )
+        self.store.replace_document(stronger_document, [stronger_chunk])
+        self.store.replace_document(weaker_document, [weaker_chunk])
+
+        results = self.store.search("R67 DRDY_B", "1.6_R6")
+
+        self.assertEqual(stronger_chunk.chunk_id, results[0].chunk_id)
+        self.assertGreater(results[0].score, results[1].score)
 
     def test_partial_identifier_match_is_rejected_as_insufficient_evidence(self):
         document, chunk = make_document(

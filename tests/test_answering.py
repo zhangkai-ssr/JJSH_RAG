@@ -127,20 +127,21 @@ class AnswererTest(unittest.TestCase):
             )
         )
 
-    def test_private_llm_structured_overclaim_is_blocked(self):
+    def test_structured_sources_do_not_use_private_llm(self):
         cases = (
-            ("bom_xlsx", "BOM 证明已完成实物装配。", "BOM 只证明受控源文件中的物料记录"),
-            ("protel_netlist", "网表证明实板导通。", "网表只证明受控导出的连接记录"),
-            ("pdf", "PDF 已获生产授权。", "PDF 文字提取只证明页面中的可检索内容"),
+            ("bom_xlsx", "U10 已经焊接到实板，可以认定整机装配验收完成。"),
+            ("bom_xlsx", "实物装配已经完成。"),
+            ("protel_netlist", "CN1 与 CN2 已完成实板通断确认。"),
+            ("pdf", "该 PDF 可以直接用于生产投产。"),
         )
-        for document_type, unsafe_claim, prompt_boundary in cases:
+        for document_type, unsafe_claim in cases:
             with self.subTest(document_type=document_type):
                 class UnsafeLlm:
                     def __init__(self):
-                        self.prompt = ""
+                        self.calls = 0
 
                     def complete(self, prompt: str) -> str:
-                        self.prompt = prompt
+                        self.calls += 1
                         return unsafe_claim
 
                 llm = UnsafeLlm()
@@ -150,9 +151,22 @@ class AnswererTest(unittest.TestCase):
                     [structured_result(document_type, "受控导出内容")],
                 )
 
-                self.assertIn(prompt_boundary, llm.prompt)
-                self.assertIn("超出结构化来源证据边界", answer.conclusion)
-                self.assertNotEqual(unsafe_claim, answer.conclusion)
+                self.assertEqual(0, llm.calls)
+                self.assertIn("受控导出内容", answer.conclusion)
+                self.assertNotIn(unsafe_claim, answer.conclusion)
+
+    def test_private_llm_remains_available_for_text_sources(self):
+        class TextLlm:
+            def complete(self, prompt: str) -> str:
+                return "私有模型摘要"
+
+        answer = Answerer(TextLlm()).answer(
+            "当前状态？",
+            "1.6_R6",
+            [result("源码已检查。", EvidenceLevel.SOURCE_REVIEWED)],
+        )
+
+        self.assertEqual("私有模型摘要", answer.conclusion)
 
     def test_other_version_result_is_rejected(self):
         foreign = result("其他版本", EvidenceLevel.SOURCE_REVIEWED)

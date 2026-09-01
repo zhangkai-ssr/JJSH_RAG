@@ -305,9 +305,8 @@ class KnowledgeStore:
             score += sum(1.0 for token in ascii_tokens if token in location)
             if item.chunk_id in fts_rank:
                 score += 1.0 / fts_rank[item.chunk_id]
-            score += item.priority / 100.0
             ranked.append((score, replace(item, score=score)))
-        ranked.sort(key=lambda pair: pair[0], reverse=True)
+        ranked.sort(key=lambda pair: (pair[0], pair[1].priority), reverse=True)
         return [item for _, item in ranked[:limit]]
 
     def chunk_count(self, hardware_version: str) -> int:

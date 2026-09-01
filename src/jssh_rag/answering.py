@@ -243,11 +243,10 @@ class Answerer:
                 f"基于 {hardware_version} 的 {highest.value} 证据：{summary}；"
                 "但未找到真机验收证据，不能据此认定真机验收通过。"
             )
-        elif self.llm_provider is not None:
+        elif self.llm_provider is not None and not format_boundaries:
             prompt = (
                 "只能依据下列资料回答；明确版本；不得把设计、源码、仿真、Host、QEMU、构建或烧录"
                 "表述为真机通过；冲突必须并列；无证据回答不确定。\n"
-                f"格式边界：{' '.join(format_boundaries) or '无额外格式边界'}\n"
                 f"目标版本：{hardware_version}\n问题：{query}\n资料：\n{evidence_text}"
             )
             conclusion = self.llm_provider.complete(prompt)

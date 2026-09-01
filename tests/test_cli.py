@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jssh_rag.cli import main
+from jssh_rag.cli import build_parser, main
 from jssh_rag.models import Chunk, DocumentMeta, EvidenceLevel
 from jssh_rag.store import KnowledgeStore
 
@@ -58,6 +58,9 @@ class CliTest(unittest.TestCase):
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit) as raised:
             main(["search", "--query", "ADS1298", "--database", str(self.database)])
         self.assertEqual(2, raised.exception.code)
+
+    def test_index_help_mentions_controlled_structured_sources(self):
+        self.assertIn("受控结构化", build_parser().format_help())
 
     def test_unknown_version_lists_allowed_value(self):
         error = StringIO()
