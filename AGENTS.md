@@ -105,9 +105,14 @@ flowchart TD
 2. **创建或恢复 worktree。**新任务从刚获取的 `origin/main` 创建
    `.WORKTREE/<purpose>/` 和 `feature/<task>`，创建前用
    `git check-ignore .WORKTREE/<purpose>` 确认目标路径受忽略，并确认精确路径和分支均未占用。
-   恢复尚未发布的既有 feature worktree 时，须先确认工作区干净，
-   再执行 `git fetch origin main --prune` 和 `git rebase origin/main`；存在未提交内容、冲突或基线不明时
-   停止并报告，不使用自动 stash 掩盖状态。新建 worktree 已直接基于最新 `origin/main` 时无需再做一次空 rebase。
+   恢复既有 feature worktree 时，须先确认工作区干净，并检查 upstream、实时远端同名 ref 和所有状态的
+   PR。只有 upstream 不存在或仍为 `origin/main`、
+   `git ls-remote --exit-code --heads origin refs/heads/feature/<task>` 以退出码 2 确认远端同名 ref 不存在，
+   且 `gh pr list --state all --head feature/<task>` 确认从未创建过 PR 时，才能认定
+   分支未发布并执行 `git fetch origin main --prune`、`git rebase origin/main`。任一查询不可用、失败或无法
+   证明从未发布时，一律按已发布分支处理，只允许按第 7 条吸收 `origin/main` 或停止确认。存在未提交内容、
+   冲突或基线不明时停止并报告，不使用自动 stash 掩盖状态。新建 worktree 已直接基于最新
+   `origin/main` 时无需再做一次空 rebase。
 3. **环境与基线。**在新 worktree 按 README 完成本地安装或环境准备，并在修改前运行受影响的基线测试。
    基线失败必须先区分环境问题与既有代码问题并如实报告；未解释前不得归因于本次改动，也不得继续扩大改动。
 4. **实施与自检。**按测试先行完成源码行为，将同一行为涉及的源码、测试、README 和必要工作记录放在
@@ -124,30 +129,37 @@ flowchart TD
    未通过则停止并报告。不支持独立 reviewer 时明确记录限制，不得伪称已评审。review 通过后报告范围、
    diff、验证和目标远程；推送、创建 PR、合并前分别取得用户授权，并在每一步重新核对精确远程与目标分支。
 7. **PR 后复核。**PR 创建后保留原 worktree，并从 `main` 主工作区启动一名新的独立 reviewer，检查 PR
-   完整 diff、项目规则、CI、冲突、freshness 和验证证据；未通过时回原 worktree 修复，并从 PR 前 freshness
-   重新走起，PR 前后合计最多三轮修复复核。分支一旦已推送或已创建 PR，不得用 rebase 改写已发布历史；
-   需要吸收推进后的 `origin/main` 时，在 feature 分支创建可追溯的合并提交并重验，或停止请求用户选择。
-   禁止强推覆盖远程历史。
-8. **合并后主线同步与复验。**只有取得合并授权且 PR、CI、review、freshness 均通过后才可合并。随后先
-   确认 PR 的实际 merge commit 已进入 `origin/main`，再回到干净的 `main` 主工作区执行
-   `git fetch origin main --prune` 和 `git merge --ff-only origin/main`。同步后必须再次确认
+   完整 diff、项目规则、已配置检查、冲突、freshness 和验证证据；未通过时回原 worktree 修复，并从 PR 前
+   freshness 重新走起，PR 前后合计最多三轮修复复核。通过 `gh pr checks` 等入口确认已配置检查全部通过；
+   未配置检查时记录为“未配置”，不得表述为 CI 已通过。分支一旦已推送或已创建 PR，不得用 rebase 改写
+   已发布历史；需要吸收推进后的 `origin/main` 时，在 feature 分支创建可追溯的合并提交并重验，或停止
+   请求用户选择。禁止强推覆盖远程历史。
+8. **合并后主线同步与复验。**只有取得合并授权且 PR、已配置检查、review、freshness 均满足门禁后才可
+   合并。合并后先通过 PR 状态取得实际 merge commit SHA，再回到干净的 `main` 主工作区执行
+   `git fetch origin main --prune`，并用 `git merge-base --is-ancestor <merge-sha> origin/main` 确认该提交
+   已进入刚获取的远端主线；验证通过后才执行 `git merge --ff-only origin/main`。同步后必须再次确认
    `git rev-list --left-right --count main...origin/main` 为 `0 0`，且
    `git diff --exit-code main..origin/main` 退出码为 0，才可在本地 `main` 运行受影响验证。若主工作区有
    用户改动、主线分叉、不能安全 fast-forward 或仍存在提交/树差异，不得覆盖、切换、rebase 或改写历史；
    必须停止并报告，临时验证 worktree 不能替代本地与远端 `main` 已同步这一最终门禁。
 9. **工作记录与清理门禁。**主线复验通过后更新 [plan.md](plan.md) 中该工作的范围、验证摘要、提交/PR、
-   merge 短提交号和“已完成”状态；由此产生的提交或推送仍遵守对应授权。清理前再次确认：PR 确已合并、
-   精确目标 worktree 无未提交/未跟踪内容、忽略目录中没有需要保留的数据库或证据、没有进程占用该路径，
-   本地与远端 `main` 已通过 `0 0` 和无树差异检查，且本地/远端待删分支名称与该 PR 完全一致。
-   任一条件不满足时停止并确认。
+   merge 短提交号和“已完成”状态，并使用中文 subject 提交。该记录提交的推送仍须取得授权；若不能直接
+   推送 `main`，则按仓库允许的 PR 方式合入。记录进入远端后再次 fetch、fast-forward 本地 `main`，并确认
+   `git status --porcelain` 为空、`main...origin/main` 为 `0 0` 且无树差异，不能让未提交的 `plan.md` 被
+   提交间比较掩盖。清理前还须确认：原 PR 确已合并；将目标解析为规范绝对路径后，它确实位于本仓库预期
+   `.WORKTREE` 目录内，`git worktree list --porcelain` 将该路径绑定到目标 `feature/<task>`；目标 worktree
+   无未提交/未跟踪内容，忽略目录中没有需要保留的数据库或证据，没有进程占用该路径；本地/远端待删分支
+   名称与该 PR 完全一致。任一条件不满足时停止并确认。
 10. **精确清理与终检。**从主工作区依次执行 `git worktree remove <exact-path>`、
-    `git worktree prune`、`git branch -d feature/<task>`，并在已授权的精确远程上执行
-    `git push origin --delete feature/<task>` 删除同名远端分支。
+    `git worktree prune`、`git branch -d feature/<task>`。随后用
+    `git ls-remote --exit-code --heads origin refs/heads/feature/<task>` 实时查询精确远端 ref：存在时才在已授权
+    的精确远程上执行 `git push origin --delete feature/<task>`；已不存在则直接记录为满足目标；查询异常时
+    停止，不把网络或权限错误当作已删除。
     Windows 出现目录锁时先释放引用该精确路径的编辑器、终端或进程，再重试；不得用 `--force`、递归广泛
     删除或模糊匹配绕过门禁。最后确认目标路径不存在、`git worktree list --porcelain` 无该注册、
-    `git branch --list feature/<task>` 无本地分支、远端无同名 ref，`main...origin/main` 仍为 `0 0` 且无树
-    差异，并复查无关脏改动和文件仍原样保留。满足这些条件后直接完成既定清理，不再把“是否保留临时
-    worktree”作为额外选项。
+    `git branch --list feature/<task>` 无本地分支、再次实时查询远端无同名 ref，`git status --porcelain`
+    为空，`main...origin/main` 仍为 `0 0` 且无树差异，并复查无关文件仍原样保留。满足这些条件后直接完成
+    既定清理，不再把“是否保留临时 worktree”作为额外选项。
 
 ## 验证入口
 
