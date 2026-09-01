@@ -9,9 +9,10 @@
 1. 第一阶段只支持 `1.6_R6`，不得自动回退到 `1.6`、`1.65`、`1.2`、`2.0` 或 `ARCHIVE`。
 2. 源仓库固定由来源策略显式配置；当前入口是 `C:\work1\JSZN\ESP32_S3` 的 `1.6_R6/`。
 3. 对源仓库只允许 Git 和文件读取，不得从 RAG 流程修改、提交、切换分支、构建、烧录或控制设备。
-4. 只索引 Git 跟踪且与声明提交一致的正式文本；目标版本存在已跟踪未提交修改时拒绝索引。
+4. 只索引 Git 跟踪且与声明提交一致的正式文本和受控结构化文件；目标版本存在已跟踪未提交修改时拒绝索引。
 5. `.WORKTREE`、`ARCHIVE`、`tmp`、`output`、`.BUILD`、`release/out`、
-   `validation/results`、未跟踪文件和不受支持的二进制格式不得进入文本 MVP 索引。
+   `validation/results`、未跟踪文件和不受支持的二进制格式不得进入索引。BOM、网表和 PDF
+   只能通过来源策略中的精确路径模式准入，不能按扩展名全量放开。
 6. 本地数据库、模型、缓存和日志不得提交，也不得写入 ESP32_S3 仓库。
 7. 默认完全离线；只有用户批准并显式配置私有服务地址时，才可向 Embedding 或 LLM 服务发送文本。
 8. 第一阶段不访问串口、不烧录、不 OTA、不修改配置、不执行实时采集、不控制真实设备。
@@ -24,6 +25,7 @@
 | `config/metadata_overrides/` | 精确路径的受控状态与证据覆盖 | `v1_6_r6.json` |
 | `src/jssh_rag/models.py` | 版本、文档、chunk、引用和回答数据模型 | 源码 docstring |
 | `src/jssh_rag/indexer.py` | Git 跟踪文件发现、提交身份校验和确定性切分 | 源码 docstring |
+| `src/jssh_rag/structured.py` | XLSX BOM 与 PDF 的确定性解析和格式原生定位 | 源码 docstring |
 | `src/jssh_rag/store.py` | SQLite 文档、chunk、FTS5 和向量缓存 | 源码 docstring |
 | `src/jssh_rag/retriever.py` | 版本过滤、标识符/全文/语义混合检索 | 源码 docstring |
 | `src/jssh_rag/answering.py` | 拒答、证据边界、冲突呈现和引用生成 | 源码 docstring |
@@ -45,8 +47,10 @@
 5. `design_proposed`、`source_reviewed`、仿真、Host、QEMU、构建、烧录、真机部分验证、真机通过和
    量产接受必须分开；低等级证据不得提升为高等级结论。
 6. `current` 与非 current 来源同时命中时必须显示冲突并保留双方引用，不自行选择方便的结论。
-7. 所有关键结论必须引用目标版本原文件、标题或符号、起止行、commit 和 SHA-256；无目标版本证据时明确拒答。
-8. 元数据修正优先使用受控覆盖文件，不批量修改源仓库文档。
+7. 所有关键结论必须引用目标版本原文件、标题或符号、commit 和 SHA-256；文本保留起止行，
+   BOM 保留工作表与单元格范围，PDF 保留页码。无目标版本证据时明确拒答。
+8. PDF 文字提取、BOM 行和网表网络只证明受控源内容可复核，不得提升为图形连通性、实板导通、生产授权或真机通过。
+9. 元数据修正优先使用受控覆盖文件，不批量修改源仓库文档。
 
 ## 文档与代码规则
 
@@ -174,6 +178,7 @@ flowchart TD
 | --- | --- |
 | 来源策略、元数据 | `tests.test_source_policy`、`tests.test_metadata`，并确认源版本没有已跟踪修改 |
 | 解析、存储、重建 | `tests.test_indexer`、`tests.test_store`，实际执行一次 `index` |
+| BOM、网表、PDF | `tests.test_structured`、`tests.test_source_policy`、`tests.test_store`，并检查工作表/单元格、行号、页码和实际结构化查询 |
 | 检索、Embedding | `tests.test_retriever` 和完整黄金评估；关键版本污染必须为 0 |
 | 回答、证据边界 | `tests.test_answering` 和完整黄金评估；引用、拒答、冲突与证据等级均须检查 |
 | CLI | `tests.test_cli`，并对 `index/search/ask/evaluate` 做受影响命令冒烟测试 |

@@ -189,6 +189,30 @@ class RetrieverTest(unittest.TestCase):
         self.assertEqual(formal.chunk_id, results[0].chunk_id)
         self.assertIn(historical.chunk_id, {item.chunk_id for item in results})
 
+    def test_controlled_priority_survives_rank_fusion_with_duplicate_sources(self):
+        formal = add_document(
+            self.store,
+            "1.6_R6",
+            "1.6_R6/hardware/COMPATIBILITY.md",
+            "ADS1298 CS GPIO8 GPIO9 当前分配。",
+            priority=100,
+        )
+        for index in range(5):
+            add_document(
+                self.store,
+                "1.6_R6",
+                f"1.6_R6/docs/duplicate-{index}.md",
+                f"R6 两片 ADS1298 的 CS GPIO8 和 CS GPIO9 如何分配 {index}",
+            )
+
+        results = self.retriever.search(
+            "R6 两片 ADS1298 的 CS GPIO8 和 CS GPIO9 如何分配",
+            "1.6_R6",
+            limit=5,
+        )
+
+        self.assertIn(formal.chunk_id, {item.chunk_id for item in results})
+
     def test_priority_does_not_replace_query_relevance(self):
         add_document(
             self.store,

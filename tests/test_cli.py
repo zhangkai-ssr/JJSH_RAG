@@ -35,6 +35,22 @@ class CliTest(unittest.TestCase):
             evidence_level=EvidenceLevel.SOURCE_REVIEWED,
         )
         store.replace_document(document, [Chunk.create(document, "drdy", 30, 34, content)])
+        bom_content = "Designator: U10\nManufacturer Part: LIS2MDLTR\nSupplier Part: C919695"
+        bom = DocumentMeta(
+            product="JSSH",
+            hardware_version="1.6_R6",
+            relative_path="1.6_R6/hardware/mainboard-bottom/source/BOM_board.xlsx",
+            git_commit="a" * 40,
+            source_sha256=hashlib.sha256(bom_content.encode("utf-8")).hexdigest(),
+            document_type="bom_xlsx",
+            module="hardware",
+            status="current",
+            evidence_level=EvidenceLevel.SOURCE_REVIEWED,
+        )
+        store.replace_document(
+            bom,
+            [Chunk.create_located(bom, "BOM U10", "BOM!A2:K2", bom_content)],
+        )
         store.set_index_metadata("1.6_R6", r"C:\work1\JSZN\ESP32_S3", document.git_commit)
         store.close()
 
@@ -79,6 +95,25 @@ class CliTest(unittest.TestCase):
         self.assertEqual("1.6_R6", payload["hardware_version"])
         self.assertEqual("a" * 40, payload["git_commit"])
         self.assertEqual(30, payload["results"][0]["start_line"])
+
+    def test_search_prints_structured_source_locator(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            exit_code = main(
+                [
+                    "search",
+                    "--version",
+                    "1.6_R6",
+                    "--query",
+                    "LIS2MDLTR U10 C919695",
+                    "--database",
+                    str(self.database),
+                ]
+            )
+        payload = json.loads(output.getvalue())
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual("BOM!A2:K2", payload["results"][0]["source_locator"])
 
     def test_ask_prints_fixed_answer_fields(self):
         output = StringIO()
