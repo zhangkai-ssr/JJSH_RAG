@@ -149,7 +149,9 @@ flowchart TD
    仅当仓库允许且已取得直接推送 `main` 的授权时，才在干净的本地 `main` 更新范围、验证摘要、提交/PR、
    merge 短提交号和“已完成”状态，使用中文 subject 提交并推送；否则从同步后的 `origin/main` 新建专用
    记录分支/worktree，在那里修改和提交，并重新取得推送、创建 PR、合并三项授权。不得先在本地 `main`
-   产生提交，再临时把它迁移成 PR。记录进入远端后再次 fetch、fast-forward 本地 `main`，并确认
+   产生提交，再临时把它迁移成 PR。只有记录提交已通过授权的直接推送或专用 PR 实际进入
+   `origin/main`，并在 fetch 后通过 `git merge-base --is-ancestor <record-sha> origin/main` 确认归属，才可
+   fast-forward 本地 `main`、执行后续终检和清理；仅把记录分支推送到远端不满足门禁。随后确认
    `git status --porcelain` 为空、`main...origin/main` 为 `0 0` 且无树差异，不能让未提交的 `plan.md` 被
    提交间比较掩盖。清理前还须确认：原 PR 确已合并；将目标解析为规范绝对路径后，它确实位于本仓库预期
    `.WORKTREE` 目录内，`git worktree list --porcelain` 将该路径绑定到目标 `feature/<task>`；目标 worktree
